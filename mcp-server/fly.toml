@@ -19,7 +19,8 @@ primary_region = "sjc"
   force_https = true
   auto_start_machines = true
   auto_stop_machines = "stop"
-  min_machines_running = 0
+  # Keep one MCP instance warm so clients do not hit a cold start when reconnecting.
+  min_machines_running = 1
   processes = ["app"]
 
   [[http_service.checks]]

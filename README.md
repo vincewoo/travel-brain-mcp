@@ -1,4 +1,4 @@
-# Travel Brain v0.1
+# Travel Brain MCP
 
 Travel Brain is a database-authoritative MCP backend for travel planning, live concierge work, research, journaling, recommendations, and preference memory. The server exposes Streamable HTTP at `/mcp`; Supabase/PostgreSQL remains the canonical store.
 

@@ -32,8 +32,10 @@ export function createDbContext(config, authInfo, clientFactory = createClient) 
     authInfo,
     authMode: 'supabase_oauth',
     supabase: clientFactory(config.supabaseUrl, config.publishableKey, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-      global: { headers: { Authorization: `Bearer ${authInfo.token}` } }
+      // Treat the caller's OAuth JWT as the request-scoped Supabase session token.
+      // This guarantees Data API requests derive Authorization from the verified
+      // user JWT rather than client auth state or the API-key fallback.
+      accessToken: async () => authInfo.token
     })
   };
 }

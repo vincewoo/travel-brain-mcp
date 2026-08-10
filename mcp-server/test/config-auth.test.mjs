@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createClient } from '@supabase/supabase-js';
 import { createStaticTokenVerifier, createSupabaseTokenVerifier } from '../src/auth.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { createDbContext } from '../src/db.mjs';
@@ -104,7 +105,7 @@ test('Supabase verifier maps the verified subject and OAuth client into auth con
   assert.deepEqual(authInfo.scopes, ['openid', 'profile']);
 });
 
-test('OAuth database context is request-scoped and carries the user JWT for RLS', () => {
+test('OAuth database context is request-scoped and supplies the user JWT as its RLS access token', async () => {
   const config = loadConfig({
     NODE_ENV: 'test',
     MCP_AUTH_MODE: 'supabase_oauth',
@@ -126,6 +127,40 @@ test('OAuth database context is request-scoped and carries the user JWT for RLS'
   }, clientFactory);
   assert.equal(context.actorId, actorId);
   assert.equal(clientArgs[1], 'sb_publishable_test');
-  assert.equal(clientArgs[2].global.headers.Authorization, 'Bearer user-access-token');
-  assert.equal(clientArgs[2].auth.persistSession, false);
+  assert.equal(await clientArgs[2].accessToken(), 'user-access-token');
+  assert.equal(clientArgs[2].global, undefined);
+});
+
+test('OAuth database requests send the verified JWT instead of the publishable key as bearer auth', async () => {
+  const config = loadConfig({
+    NODE_ENV: 'test',
+    MCP_AUTH_MODE: 'supabase_oauth',
+    SUPABASE_URL: 'https://project.supabase.co',
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test',
+    PUBLIC_BASE_URL: 'https://travel.example.com'
+  });
+  let requestHeaders;
+  const context = createDbContext(config, {
+    token: 'user-access-token',
+    clientId: 'oauth-client-id',
+    scopes: [],
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    extra: { actorId, authMode: 'supabase_oauth', issuer: config.supabaseOAuthIssuer }
+  }, (url, key, options) => createClient(url, key, {
+    ...options,
+    global: {
+      fetch: async (_input, init) => {
+        requestHeaders = new Headers(init.headers);
+        return new Response('[]', {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        });
+      }
+    }
+  }));
+
+  const { error } = await context.supabase.from('trips').select('id');
+  assert.equal(error, null);
+  assert.equal(requestHeaders.get('Authorization'), 'Bearer user-access-token');
+  assert.equal(requestHeaders.get('apikey'), 'sb_publishable_test');
 });

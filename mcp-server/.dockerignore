@@ -1,0 +1,12 @@
+.env
+.env.*
+.git
+.gitignore
+.DS_Store
+node_modules
+npm-debug.log*
+test
+coverage
+fly.toml
+README*
+

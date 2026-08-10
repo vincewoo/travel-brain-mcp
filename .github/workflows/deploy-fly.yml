@@ -1,0 +1,93 @@
+name: Validate and deploy to Fly.io
+
+on:
+  pull_request:
+    paths:
+      - "mcp-server/**"
+      - ".github/workflows/deploy-fly.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "mcp-server/**"
+      - ".github/workflows/deploy-fly.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Test and build container
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run checks and HTTP integration tests
+        run: npm run check
+        env:
+          TRAVEL_BRAIN_NETWORK_TESTS: "1"
+
+      - name: Build production container
+        run: docker build --tag travel-brain-mcp:ci .
+
+  deploy:
+    name: Deploy production
+    if: github.event_name != 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://travel-brain-mcp.fly.dev
+    concurrency:
+      group: fly-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # master
+
+      - name: Deploy
+        run: flyctl deploy --remote-only --app travel-brain-mcp
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Verify production endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_url="https://travel-brain-mcp.fly.dev"
+
+          curl --fail --silent --show-error \
+            --retry 10 --retry-delay 3 --retry-all-errors \
+            "${base_url}/health"
+
+          curl --fail --silent --show-error \
+            "${base_url}/.well-known/oauth-protected-resource/mcp" \
+            >/dev/null
+
+          mcp_status="$(curl --silent --show-error --output /dev/null \
+            --write-out '%{http_code}' "${base_url}/mcp")"
+          if [[ "${mcp_status}" != "401" ]]; then
+            echo "::error::Expected anonymous /mcp request to return 401; got ${mcp_status}."
+            exit 1
+          fi

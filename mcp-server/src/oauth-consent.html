@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Authorize Travel Brain</title>
+    <link rel="stylesheet" href="/oauth/consent/app.css">
+    <script defer src="/oauth/consent/supabase.js"></script>
+    <script defer src="/oauth/consent/app.js"></script>
+  </head>
+  <body>
+    <main class="card" aria-labelledby="title">
+      <div class="brand" aria-hidden="true">TB</div>
+      <p class="eyebrow">Travel Brain</p>
+      <h1 id="title">Authorize access</h1>
+
+      <p id="status" class="status" role="status" aria-live="polite">Loading authorization request…</p>
+
+      <section id="login" hidden>
+        <p>Sign in with Google. Travel Brain uses Supabase behind the scenes to protect each traveler’s data.</p>
+        <button type="button" id="google-login" class="google-button">Continue with Google</button>
+        <div class="divider"><span>or use email</span></div>
+        <form id="login-form">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="username" required>
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password">
+          <div class="actions stacked">
+            <button type="submit" name="login" value="password">Sign in</button>
+            <button type="button" id="magic-link" class="secondary">Email me a magic link</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="consent" hidden>
+        <p><strong id="client-name"></strong> is requesting access to your Travel Brain account.</p>
+        <dl>
+          <div>
+            <dt>Application</dt>
+            <dd id="client-uri"></dd>
+          </div>
+          <div>
+            <dt>Signed in as</dt>
+            <dd id="user-email"></dd>
+          </div>
+          <div>
+            <dt>Return address</dt>
+            <dd id="redirect-uri"></dd>
+          </div>
+        </dl>
+        <h2>Requested permissions</h2>
+        <ul id="scopes"></ul>
+        <p class="warning">Only approve clients you recognize. Approval lets this client act on your Travel Brain data with these permissions.</p>
+        <div class="actions">
+          <button type="button" id="deny" class="secondary">Deny</button>
+          <button type="button" id="approve">Approve</button>
+        </div>
+        <button type="button" id="sign-out" class="link-button">Sign out</button>
+      </section>
+    </main>
+  </body>
+</html>

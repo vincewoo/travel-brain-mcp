@@ -1,0 +1,86 @@
+# Security model
+
+Travel Brain has no anonymous MCP mode. `/health` is public and lightweight; every method on `/mcp` requires a verified bearer credential.
+
+## Authentication modes
+
+| Environment | `MCP_AUTH_MODE` | MCP credential | Supabase credential used for tool queries | Identity/RLS behavior |
+|---|---|---|---|---|
+| Local development | `static` | High-entropy `MCP_BEARER_TOKEN` | Service-role key | Fixed `TRAVEL_BRAIN_USER_ID`; application checks are the authorization boundary |
+| Remote staging | `static` | High-entropy `MCP_BEARER_TOKEN` | Service-role key stored as a Fly secret | Same fixed actor; HTTPS plus bearer auth is mandatory |
+| Production | `supabase_oauth` | Supabase OAuth 2.1 user access token | Publishable key plus that user token | Verified token `sub`; Postgres RLS and application checks both apply |
+
+Static mode is an interim single-user mechanism. Because the service-role credential bypasses RLS, it must never be exposed through an anonymous endpoint. Startup requires a bearer token of at least 32 bytes and rejects a publishable key supplied as `SUPABASE_SERVICE_ROLE_KEY`.
+
+OAuth mode does not accept `TRAVEL_BRAIN_USER_ID` as identity. Supabase validates the JWT; the server requires the expected issuer, `authenticated` role, expiration, `sub`, and OAuth `client_id`. The verified subject is injected into database functions through a request-scoped context. A new Supabase client is created with the publishable key and caller's Authorization header; a shared singleton's session or headers are never mutated.
+
+## OAuth discovery and resource-server boundary
+
+In `supabase_oauth` mode the MCP service acts only as a resource server. Supabase Auth remains the OAuth authorization server.
+
+The service publishes:
+
+- `/.well-known/oauth-protected-resource/mcp` for RFC 9728 resource metadata
+- `/.well-known/oauth-authorization-server` as a compatibility mirror of Supabase authorization-server metadata
+- `WWW-Authenticate: Bearer` challenges pointing clients at protected-resource metadata
+
+The service does not issue access/refresh tokens and does not contain a home-grown authorization server.
+
+`/oauth/consent` is the user-facing approval UI required by Supabase OAuth Server. It uses the public Supabase browser key to authenticate travelers and invoke Supabase's authorization-details, approve, and deny APIs. Supabase still validates the authorization request and issues every code/token. The page is served with `Cache-Control: no-store`, a restrictive Content Security Policy, clickjacking protection, no referrer, and no access to the service-role key.
+
+Google social login is an identity input to Supabase Auth, not a second MCP token issuer. On first Google sign-in Supabase creates an Auth user record automatically; users do not manage separate Supabase credentials. Only basic identity scopes are required. The Google provider secret is held by Supabase and is never configured on Fly or sent to the consent page.
+
+## Database authorization
+
+All public application tables have RLS enabled. Existing policies use `auth.uid()` plus trip ownership/membership. OAuth access tokens include the user subject and OAuth `client_id`, so existing user policies continue to work and can later be narrowed by approved `client_id`.
+
+Application-level `tripAccess()` checks remain in both modes:
+
+- owner: read/write
+- editor: read/write shared trip
+- viewer: read-only shared trip
+- unrelated user: no access
+
+In static mode these checks are essential because the service role bypasses RLS. In OAuth mode they are defense in depth and RLS may hide inaccessible rows before the application sees them.
+
+Profile bootstrap is request-scoped. Before the first tool operation in an authenticated HTTP request, the server upserts only the verified actor's `profiles` row. In OAuth mode the existing self-insert/self-update profile policy authorizes that operation; no service role is used.
+
+## Secret handling
+
+Never commit or bake these values into an image:
+
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `MCP_BEARER_TOKEN`
+- OAuth access or refresh tokens
+- Google OAuth client secrets
+
+Use a local ignored `.env` for development and Fly secrets for deployment. The server logs request IDs, method/path, status/duration, tool name, and high-level errors. It does not log Authorization headers, tokens, service keys, tool inputs, journal text, or full database records.
+
+## Host and Origin validation
+
+`ALLOWED_HOSTS` and `ALLOWED_ORIGINS` are comma-separated hostnames without scheme, path, or port. Empty arrays are omitted from `createMcpExpressApp`; they are never passed explicitly as `[]`.
+
+For Fly, set `ALLOWED_HOSTS=<app>.fly.dev` plus any custom domains. Add Origin hostnames only for browser-hosted clients that send an Origin header. If a Fly health check reports `403`, inspect the actual Host header and add that specific hostname rather than disabling validation broadly.
+
+## Product-data protections
+
+- Firsthand recommendations require a recorded visit.
+- Planned and actual itinerary timestamps are distinct.
+- Raw traveler notes stay in `raw_note`; generated prose has a separate field.
+- Semantic preferences keep provenance, confidence, and confirmation status.
+- Research stays atomic and sourced with freshness/volatility metadata.
+- Location may be deliberately attached to a visit/journal event; no continuous GPS trail is stored.
+
+## Operator-only production prerequisites
+
+Repository code cannot complete these account/dashboard actions:
+
+1. Enable Supabase OAuth 2.1 Server.
+2. Set the Supabase Site URL to the public HTTPS Fly origin and Authorization Path to `/oauth/consent`.
+3. Configure Google Auth Platform and enable the Google provider in Supabase.
+4. Enable dynamic registration or pre-register clients and exact redirect URIs.
+5. Review/approve clients and ensure users can authenticate.
+6. Exercise RLS with real OAuth tokens and multiple users.
+7. Create the Fly app, set secrets, deploy, and validate the public endpoint.
+
+Exact commands are in the root README.

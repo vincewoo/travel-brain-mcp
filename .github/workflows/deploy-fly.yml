@@ -39,14 +39,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build unified dashboard
+        working-directory: mcp-server/ui/travel-dashboard
+        run: npm ci && npm run build
+
       - name: Run checks and HTTP integration tests
         run: npm run check
         env:
           TRAVEL_BRAIN_NETWORK_TESTS: "1"
-
-      - name: Build unified dashboard
-        working-directory: mcp-server/ui/travel-dashboard
-        run: npm ci && npm run build
 
       - name: Build production container
         run: docker build --tag travel-brain-mcp:ci .

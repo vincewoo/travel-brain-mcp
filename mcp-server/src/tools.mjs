@@ -3,15 +3,26 @@ import {
   addItineraryItem,
   addPlace,
   createTrip,
+  commitItineraryChange,
+  getCurrentContext,
+  getNearbySavedPlaces,
+  getPlacesOverview,
+  getPlanOverview,
+  getRecentJournal,
+  getRecommendations,
+  getToday,
   getTrip,
+  getTripLessons,
   listTrips,
   markPlaceVisited,
   recommendPlace,
   recordJournalNote,
   rememberPreference,
+  proposeItineraryChange,
   saveResearchFinding,
   searchTravelBrain,
-  updateItineraryItem
+  updateItineraryItem,
+  updateCurrentTripState
 } from './db.mjs';
 
 const textResult = (data, message = 'Done.') => ({
@@ -234,5 +245,210 @@ export function registerTools(server, resolveRequestContext) {
   }, tool('search_travel_brain', async ({ query, trip_id }, ctx) => textResult(
     await searchTravelBrain(ctx, query, trip_id ?? null),
     'Travel Brain search complete.'
+  )));
+
+  server.registerTool('get_today', {
+    title: 'Get today',
+    description: 'Read one authoritative local trip day with timeline, reservations, visits, fixed anchors, and schedule alerts.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_today', async ({ trip_id, date }, ctx) => textResult(
+    await getToday(ctx, trip_id, date ?? null),
+    'Trip day loaded.'
+  )));
+
+  server.registerTool('get_current_context', {
+    title: 'Get current trip context',
+    description: 'Read compact live concierge context, explicitly qualifying the latest location as fresh, stale, or missing.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      at_time: z.string().optional()
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_current_context', async ({ trip_id, at_time }, ctx) => textResult(
+    await getCurrentContext(ctx, trip_id, at_time ?? new Date()),
+    'Current trip context loaded.'
+  )));
+
+  server.registerTool('update_current_trip_state', {
+    title: 'Update current trip state',
+    description: 'Update ephemeral live-trip state. Location replaces the latest point and does not create passive location history.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      current_itinerary_item_id: z.string().uuid().nullable().optional(),
+      latitude: z.number().min(-90).max(90).optional(),
+      longitude: z.number().min(-180).max(180).optional(),
+      location_observed_at: z.string().optional(),
+      running_late_minutes: z.number().int().min(0).max(1440).optional(),
+      state: z.record(z.string(), z.unknown()).optional()
+    }).refine((input) => (input.latitude === undefined) === (input.longitude === undefined), {
+      message: 'latitude and longitude must be supplied together.'
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+  }, tool('update_current_trip_state', async (input, ctx) => textResult(
+    { current_state: await updateCurrentTripState(ctx, input) },
+    'Current trip state updated.'
+  )));
+
+  server.registerTool('get_nearby_saved_places', {
+    title: 'Get nearby saved places',
+    description: 'Find geocoded Travel Brain places within a geographic radius. Distances are straight-line geography distances, not routing times.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      latitude: z.number().min(-90).max(90).optional(),
+      longitude: z.number().min(-180).max(180).optional(),
+      use_current_location: z.boolean().default(false),
+      radius_meters: z.number().positive().max(100000).default(1500),
+      category: z.string().optional(),
+      statuses: z.array(z.enum(['candidate', 'saved', 'planned', 'visited', 'rejected'])).optional(),
+      limit: z.number().int().min(1).max(25).default(10)
+    }).superRefine((input, context) => {
+      if ((input.latitude === undefined) !== (input.longitude === undefined)) {
+        context.addIssue({ code: 'custom', message: 'latitude and longitude must be supplied together.' });
+      }
+      if (!input.use_current_location && input.latitude === undefined) {
+        context.addIssue({ code: 'custom', message: 'Provide coordinates or use_current_location.' });
+      }
+      if (input.use_current_location && input.latitude !== undefined) {
+        context.addIssue({ code: 'custom', message: 'Choose current location or explicit coordinates, not both.' });
+      }
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_nearby_saved_places', async (input, ctx) => textResult(
+    await getNearbySavedPlaces(ctx, input),
+    'Nearby saved places loaded.'
+  )));
+
+  server.registerTool('get_plan_overview', {
+    title: 'Get plan overview',
+    description: 'Read day-grouped itinerary state, deterministic planning issues, and unscheduled saved places.',
+    inputSchema: z.object({ trip_id: z.string().uuid() }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_plan_overview', async ({ trip_id }, ctx) => textResult(
+    await getPlanOverview(ctx, trip_id),
+    'Plan overview loaded.'
+  )));
+
+  server.registerTool('get_places_overview', {
+    title: 'Get places overview',
+    description: 'Read canonical trip-place state joined with research, schedule, visit, and recommendation evidence.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      statuses: z.array(z.enum(['candidate', 'saved', 'planned', 'visited', 'rejected'])).optional(),
+      category: z.string().optional(),
+      researched: z.boolean().optional(),
+      scheduled: z.boolean().optional(),
+      visited: z.boolean().optional(),
+      limit: z.number().int().min(1).max(250).default(100)
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_places_overview', async (input, ctx) => textResult(
+    await getPlacesOverview(ctx, input),
+    'Places overview loaded.'
+  )));
+
+  server.registerTool('get_recent_journal', {
+    title: 'Get recent journal',
+    description: 'Read authorized recent journal entries with raw traveler notes preserved unchanged.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      limit: z.number().int().min(1).max(100).default(25),
+      since: z.string().optional(),
+      visibility: z.enum(['private', 'trip', 'shareable']).optional()
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_recent_journal', async (input, ctx) => textResult(
+    await getRecentJournal(ctx, input),
+    'Recent journal loaded.'
+  )));
+
+  server.registerTool('get_recommendations', {
+    title: 'Get recommendations',
+    description: 'Read stored recommendations with explicit provenance and supporting visit or research evidence; private journal text is excluded.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      provenance: z.array(z.enum(['firsthand', 'research', 'mixed'])).optional(),
+      level: z.enum(['none', 'mixed', 'recommend', 'strongly_recommend', 'avoid']).optional(),
+      levels: z.array(z.enum(['none', 'mixed', 'recommend', 'strongly_recommend', 'avoid'])).optional(),
+      place_id: z.string().uuid().optional(),
+      category: z.string().optional(),
+      shareable_only: z.boolean().default(false),
+      limit: z.number().int().min(1).max(250).default(100)
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_recommendations', async (input, ctx) => textResult(
+    await getRecommendations(ctx, input),
+    'Recommendations loaded.'
+  )));
+
+  server.registerTool('get_trip_lessons', {
+    title: 'Get trip lessons',
+    description: 'Read stored trip lessons and preferences with their original confidence, status, and provenance.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      include_global_preferences: z.boolean().default(true)
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_trip_lessons', async (input, ctx) => textResult(
+    await getTripLessons(ctx, input),
+    'Stored trip lessons loaded.'
+  )));
+
+  const proposalUpdate = z.object({
+    op: z.literal('update'),
+    itinerary_item_id: z.string().uuid(),
+    patch: z.object({
+      planned_start: z.string().optional(),
+      planned_end: z.string().optional(),
+      status: z.enum(['planned', 'confirmed', 'skipped', 'cancelled']).optional(),
+      flexibility: z.enum(['fixed', 'semi_flexible', 'flexible']).optional(),
+      priority: z.number().int().min(1).max(5).optional(),
+      notes: z.string().nullable().optional()
+    }).refine((patch) => Object.keys(patch).length > 0, { message: 'Update patch must not be empty.' })
+  });
+  const proposalAdd = z.object({
+    op: z.literal('add'),
+    item: z.object({
+      title: z.string().min(1),
+      place_id: z.string().uuid().optional(),
+      item_type: z.string().default('activity'),
+      planned_start: z.string().optional(),
+      planned_end: z.string().optional(),
+      timezone: z.string().optional(),
+      flexibility: z.enum(['fixed', 'semi_flexible', 'flexible']).default('flexible'),
+      priority: z.number().int().min(1).max(5).default(3),
+      status: z.enum(['planned', 'confirmed']).default('planned'),
+      notes: z.string().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional()
+    })
+  });
+
+  server.registerTool('propose_itinerary_change', {
+    title: 'Propose itinerary change',
+    description: 'Store a reviewable itinerary diff without changing authoritative itinerary rows.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      summary: z.string().min(1),
+      rationale: z.string().optional(),
+      expires_in_minutes: z.number().int().min(1).max(1440).default(60),
+      operations: z.array(z.discriminatedUnion('op', [proposalUpdate, proposalAdd])).min(1).max(50)
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+  }, tool('propose_itinerary_change', async (input, ctx) => textResult(
+    await proposeItineraryChange(ctx, input),
+    'Itinerary change proposed; authoritative itinerary is unchanged.'
+  )));
+
+  server.registerTool('commit_itinerary_change', {
+    title: 'Commit itinerary change',
+    description: 'Atomically commit an approved pending proposal. This can move or cancel authoritative itinerary items.',
+    inputSchema: z.object({ proposal_id: z.string().uuid() }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
+  }, tool('commit_itinerary_change', async ({ proposal_id }, ctx) => textResult(
+    await commitItineraryChange(ctx, proposal_id),
+    'Itinerary proposal commit processed.'
   )));
 }

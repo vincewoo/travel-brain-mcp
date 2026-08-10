@@ -9,9 +9,9 @@ The service supports two protected authentication modes:
 
 `/health` is intentionally public and performs no database call. There is no unauthenticated MCP mode and no OpenAI API dependency.
 
-## Preserved MCP surface
+## MCP surface
 
-The same 12 tools remain available:
+The original 12 tools remain available:
 
 - `list_trips`
 - `create_trip`
@@ -25,6 +25,20 @@ The same 12 tools remain available:
 - `remember_preference`
 - `recommend_place`
 - `search_travel_brain`
+
+Step 4 adds 11 concierge/read-model tools over the same canonical data:
+
+- `get_today`
+- `get_current_context`
+- `update_current_trip_state`
+- `get_nearby_saved_places`
+- `get_plan_overview`
+- `get_places_overview`
+- `get_recent_journal`
+- `get_recommendations`
+- `get_trip_lessons`
+- `propose_itinerary_change`
+- `commit_itinerary_change`
 
 See `docs/mcp-tools.md` for contracts and `examples/vertical-slice.md` for the existing research → plan → visit → journal → recommend → learn scenario.
 
@@ -63,6 +77,7 @@ TRAVEL_BRAIN_USER_ID=YOUR_AUTH_USER_UUID
 MCP_BEARER_TOKEN=YOUR_GENERATED_TOKEN
 HOST=127.0.0.1
 PORT=3000
+LOCATION_FRESHNESS_MINUTES=30
 ALLOWED_HOSTS=
 ALLOWED_ORIGINS=
 ```
@@ -105,7 +120,9 @@ cd mcp-server
 npm run check
 ```
 
-This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, all 12 tool names, firsthand provenance, preference defaults, research/semantic separation, planned-vs-actual timing, and raw journal integrity.
+This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, all 23 tool names, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, and atomic commit delegation.
+
+The repository also contains a real PostgreSQL fixture at `mcp-server/test/sql/step4-integration.sql`. Run it after applying migrations to an isolated Supabase Postgres database; it verifies PostGIS ordering plus proposal commit, stale rejection, atomicity, idempotency, viewer denial, and planned-vs-actual preservation.
 
 The HTTP integration test opens a loopback port and is opt-in for restricted CI/sandbox environments:
 

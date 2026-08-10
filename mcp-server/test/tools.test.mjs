@@ -14,10 +14,21 @@ const expectedTools = [
   'mark_place_visited',
   'remember_preference',
   'recommend_place',
-  'search_travel_brain'
+  'search_travel_brain',
+  'get_today',
+  'get_current_context',
+  'update_current_trip_state',
+  'get_nearby_saved_places',
+  'get_plan_overview',
+  'get_places_overview',
+  'get_recent_journal',
+  'get_recommendations',
+  'get_trip_lessons',
+  'propose_itinerary_change',
+  'commit_itinerary_change'
 ];
 
-test('all 12 compatible MCP tool names remain registered', () => {
+test('the original 12 and all 11 Step 4 MCP tool names remain registered', () => {
   const names = [];
   const server = {
     registerTool(name) {
@@ -27,4 +38,3 @@ test('all 12 compatible MCP tool names remain registered', () => {
   registerTools(server, async () => ({}));
   assert.deepEqual(names, expectedTools);
 });
-

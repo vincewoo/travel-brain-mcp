@@ -43,6 +43,8 @@ Application-level `tripAccess()` checks remain in both modes:
 
 In static mode these checks are essential because the service role bypasses RLS. In OAuth mode they are defense in depth and RLS may hide inaccessible rows before the application sees them.
 
+Itinerary proposals add a second write boundary. Members may read proposal records, but only owners/editors may insert them. Proposal rows cannot be directly updated or deleted through RLS. The `commit_itinerary_change_proposal` security-definer RPC verifies that `p_actor_id` matches `auth.uid()` whenever a user JWT is present, checks owner/editor access itself, locks proposal and itinerary rows, validates a strict operation whitelist, checks `updated_at` versions, and applies the complete change in one transaction. Static mode passes its already-verified fixed actor to the same RPC.
+
 Profile bootstrap is request-scoped. Before the first tool operation in an authenticated HTTP request, the server upserts only the verified actor's `profiles` row. In OAuth mode the existing self-insert/self-update profile policy authorizes that operation; no service role is used.
 
 ## Secret handling
@@ -69,7 +71,8 @@ For Fly, set `ALLOWED_HOSTS=<app>.fly.dev` plus any custom domains. Add Origin h
 - Raw traveler notes stay in `raw_note`; generated prose has a separate field.
 - Semantic preferences keep provenance, confidence, and confirmation status.
 - Research stays atomic and sourced with freshness/volatility metadata.
-- Location may be deliberately attached to a visit/journal event; no continuous GPS trail is stored.
+- `current_trip_state.last_location` is overwritten in its one-per-trip row and is always returned with fresh/stale/missing qualification; no continuous GPS trail is stored.
+- Reasoning-derived itinerary repairs are stored as non-authoritative proposals and committed only through an atomic, idempotent RPC after approval.
 
 ## Operator-only production prerequisites
 

@@ -65,6 +65,21 @@ networkTest('health is public and MCP requires the configured bearer token', asy
     })
   });
   assert.equal(initialize.status, 200);
+
+  const toolsList = await fetch(`${baseUrl}/mcp`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream'
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+  });
+  assert.equal(toolsList.status, 200);
+  const toolsBody = await toolsList.text();
+  for (const name of ['list_trips', 'get_today', 'commit_itinerary_change']) {
+    assert.match(toolsBody, new RegExp(`"name":"${name}"`));
+  }
 });
 
 networkTest('OAuth mode advertises protected-resource metadata and protects MCP', async (t) => {

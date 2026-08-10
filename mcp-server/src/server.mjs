@@ -64,7 +64,7 @@ function createTravelBrainMcpHandler(config) {
       SERVER_INFO,
       {
         instructions:
-          'Travel Brain is authoritative. Distinguish planned from visited, firsthand from research, and raw journal notes from generated summaries. Prefer flexible itinerary items when replanning.'
+          'Travel Brain is authoritative. Distinguish planned from visited, firsthand from research, and raw journal notes from generated summaries. Prefer flexible itinerary items when replanning. For reasoning-derived itinerary changes, propose first and call commit_itinerary_change only after the traveler explicitly approves the proposal.'
       }
     );
     registerTools(server, createRequestContextResolver(config, factoryContext));

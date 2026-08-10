@@ -41,6 +41,11 @@ Reusable recommendation record. Provenance differentiates firsthand vs research.
 ### `current_trip_state`
 Latest ephemeral context for concierge behavior: current itinerary item, last location, observed time, and running-late estimate.
 
+This remains one row per trip. Location updates replace `last_location`; there is no passive location-history entity.
+
+### `itinerary_change_proposals`
+Reviewable, non-authoritative itinerary diffs with creator, validation, expiry, status, and optimistic concurrency versions. A transaction-scoped database function is the only direct update path and commits all operations or none.
+
 ### `media_assets`
 Metadata for Supabase Storage objects. The binary objects remain in Storage.
 

@@ -11,6 +11,7 @@ class ScriptedQuery {
   upsert(value, options) { this.call.operation = 'upsert'; this.call.value = value; this.call.options = options; return this; }
   update(value) { this.call.operation = 'update'; this.call.value = value; return this; }
   eq(column, value) { this.call.filters.push(['eq', column, value]); return this; }
+  gte(column, value) { this.call.filters.push(['gte', column, value]); return this; }
   in(column, value) { this.call.filters.push(['in', column, value]); return this; }
   ilike(column, value) { this.call.filters.push(['ilike', column, value]); return this; }
   or(value) { this.call.filters.push(['or', value]); return this; }
@@ -37,9 +38,15 @@ export function createScriptedSupabase(steps) {
       calls.push(call);
       return new ScriptedQuery(step, call);
     },
+    rpc(name, args) {
+      const step = remaining.shift();
+      assert.ok(step, `Unexpected Supabase RPC call for ${name}`);
+      assert.equal(name, step.rpc, `Expected Supabase RPC ${step.rpc}, received ${name}`);
+      calls.push({ rpc: name, args, operation: 'rpc', filters: [] });
+      return Promise.resolve({ data: step.data ?? null, error: step.error ?? null });
+    },
     assertComplete() {
       assert.equal(remaining.length, 0, `Expected ${remaining.length} more Supabase call(s).`);
     }
   };
 }
-

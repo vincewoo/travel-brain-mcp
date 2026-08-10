@@ -12,6 +12,8 @@ Stores durable facts and provenance.
 ### MCP server
 Exposes narrow, goal-oriented operations. It validates authorization and invariants before writes.
 
+Step 4 read models aggregate existing normalized tables into task-shaped responses for Today, Plan, Places, Journal, and Recommendations. They do not introduce dashboard cache tables or call live providers.
+
 The server has no module-global traveler identity. Auth middleware verifies each HTTP request and tool callbacks resolve a request-scoped `{ actorId, supabase, authInfo }` context. Static staging uses a protected fixed actor and service-role client; production OAuth uses the verified Supabase subject and a user-token client so RLS remains active.
 
 ### Planner/concierge agent
@@ -46,6 +48,8 @@ The MCP server rejects a `firsthand` recommendation when no visit exists for tha
 ## Planned vs actual
 
 Itinerary records include both planned and actual timestamps. Replanning never overwrites history.
+
+Reasoning-derived replans use a two-step workflow: `propose_itinerary_change` stores a reviewable diff without touching the itinerary, and `commit_itinerary_change` applies an approved, non-stale proposal atomically. Adds receive stable IDs at proposal time so repeated commit calls are idempotent.
 
 ## Location privacy
 

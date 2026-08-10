@@ -64,6 +64,14 @@ function parsePort(value) {
   return port;
 }
 
+function parsePositiveInteger(value, name, defaultValue) {
+  const parsed = Number(value ?? defaultValue);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return parsed;
+}
+
 function requireUuid(value, name) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
     throw new Error(`${name} must be a UUID.`);
@@ -124,7 +132,12 @@ export function loadConfig(env = process.env) {
     host,
     port: parsePort(env.PORT),
     allowedHosts: parseHostnameList(env.ALLOWED_HOSTS, 'ALLOWED_HOSTS'),
-    allowedOrigins: parseHostnameList(env.ALLOWED_ORIGINS, 'ALLOWED_ORIGINS')
+    allowedOrigins: parseHostnameList(env.ALLOWED_ORIGINS, 'ALLOWED_ORIGINS'),
+    locationFreshnessMinutes: parsePositiveInteger(
+      env.LOCATION_FRESHNESS_MINUTES,
+      'LOCATION_FRESHNESS_MINUTES',
+      30
+    )
   };
 
   if (authMode === 'static') {

@@ -77,9 +77,40 @@ networkTest('health is public and MCP requires the configured bearer token', asy
   });
   assert.equal(toolsList.status, 200);
   const toolsBody = await toolsList.text();
-  for (const name of ['list_trips', 'get_today', 'commit_itinerary_change']) {
+  for (const name of ['list_trips', 'get_today', 'commit_itinerary_change', 'show_travel_dashboard']) {
     assert.match(toolsBody, new RegExp(`"name":"${name}"`));
   }
+
+  const resourcesList = await fetch(`${baseUrl}/mcp`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream'
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'resources/list', params: {} })
+  });
+  assert.equal(resourcesList.status, 200);
+  assert.match(await resourcesList.text(), /ui:\/\/travel-brain\/dashboard\.html/);
+
+  const dashboardResource = await fetch(`${baseUrl}/mcp`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream'
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'resources/read',
+      params: { uri: 'ui://travel-brain/dashboard.html' }
+    })
+  });
+  assert.equal(dashboardResource.status, 200);
+  const resourceBody = await dashboardResource.text();
+  assert.match(resourceBody, /text\/html;profile=mcp-app/);
+  assert.match(resourceBody, /Travel Brain Dashboard/);
 });
 
 networkTest('OAuth mode advertises protected-resource metadata and protects MCP', async (t) => {

@@ -14,10 +14,14 @@ Exposes narrow, goal-oriented operations. It validates authorization and invaria
 
 Step 4 read models aggregate existing normalized tables into task-shaped responses for Today, Plan, Places, Journal, and Recommendations. They do not introduce dashboard cache tables or call live providers.
 
+Step 5 serves one unified MCP App from the same authenticated server. The browser only keeps transient presentation state such as the selected tab, date, filters, and selected unscheduled places. It reads the Step 4 models, sends explicit deterministic writes back through MCP, and routes optimization or synthesis requests to the host model. There is no second MCP service, frontend database, browser optimizer, or service credential in the UI.
+
 The server has no module-global traveler identity. Auth middleware verifies each HTTP request and tool callbacks resolve a request-scoped `{ actorId, supabase, authInfo }` context. Static staging uses a protected fixed actor and service-role client; production OAuth uses the verified Supabase subject and a user-token client so RLS remains active.
 
 ### Planner/concierge agent
 Chooses tools and synthesizes answers. It should distinguish firsthand experience from research-only knowledge in every recommendation.
+
+Reasoning-heavy dashboard actions send a user message to the host model. The model may prepare an itinerary proposal, but only an explicit UI confirmation calls `commit_itinerary_change`.
 
 ### Future companion app
 Reads/writes the same Travel Brain. Location and schedule drift are ephemeral state, not permanent location history by default.

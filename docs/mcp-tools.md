@@ -134,3 +134,13 @@ Returns `{ proposal, diff }`. The stored operations capture `expected_updated_at
 ### `commit_itinerary_change`
 
 Input: `{ proposal_id: uuid }`. Success returns `{ proposal_id, status: "committed", committed_at, changed_items, added_items, idempotent_replay }`. Stale input returns `{ error_code: "STALE_PROPOSAL", message, changed_item_ids }` with no operations applied. The PostgreSQL RPC is atomic, destructive in MCP annotations because it can move/cancel plans, and idempotent for repeated calls.
+
+## Step 5 MCP App launcher
+
+### `show_travel_dashboard`
+
+Input: `{ trip_id?: uuid, date?: YYYY-MM-DD, view?: "today" | "plan" | "places" | "journal" | "recommendations" }`.
+
+Returns `{ dashboard: { trip_id?, date?, view? } }` and references the `ui://travel-brain/dashboard.html` MCP App resource. `view` deliberately has no schema default: if it is absent, the app chooses a tab from the authoritative trip status (`draft` → Places, `planning` → Plan, `active` → Today, `completed` → Journal, `archived` → Recommendations).
+
+The launcher is read-only. Within the app, Mark Done, Skip, and approved proposal commits call authenticated MCP write tools directly. Optimization, issue repair, place fitting, live food search, freeform memory capture, replanning, and friend-guide generation send a user message to the host model for reasoning.

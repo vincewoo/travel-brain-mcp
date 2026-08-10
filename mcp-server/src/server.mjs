@@ -16,6 +16,7 @@ import {
 } from './auth.mjs';
 import { loadConfig } from './config.mjs';
 import { createDbContext, ensureProfile } from './db.mjs';
+import { registerTravelDashboardUi } from './dashboard-ui.mjs';
 import { installOAuthConsentRoutes } from './oauth-consent.mjs';
 import { registerTools } from './tools.mjs';
 
@@ -68,6 +69,7 @@ function createTravelBrainMcpHandler(config) {
       }
     );
     registerTools(server, createRequestContextResolver(config, factoryContext));
+    registerTravelDashboardUi(server);
     return server;
   });
 }

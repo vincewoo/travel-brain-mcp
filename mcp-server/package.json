@@ -10,9 +10,10 @@
     "dev": "node --env-file=.env src/server.mjs",
     "start": "node src/bootstrap.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/config.mjs && node --check src/auth.mjs && node --check src/oauth-consent.mjs && node --check src/oauth-consent.js && node --check src/bootstrap.mjs && node --check src/server.mjs && node --check src/db.mjs && node --check src/tools.mjs && npm test"
+    "check": "node --check src/config.mjs && node --check src/auth.mjs && node --check src/oauth-consent.mjs && node --check src/oauth-consent.js && node --check src/bootstrap.mjs && node --check src/dashboard-ui.mjs && node --check src/server.mjs && node --check src/db.mjs && node --check src/tools.mjs && npm test"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/express": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",

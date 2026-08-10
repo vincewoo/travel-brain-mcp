@@ -40,6 +40,12 @@ Step 4 adds 11 concierge/read-model tools over the same canonical data:
 - `propose_itinerary_change`
 - `commit_itinerary_change`
 
+Step 5 adds one visual launcher over those same tools:
+
+- `show_travel_dashboard`
+
+The launcher serves one embedded MCP App with Today, Plan, Places, Journal, and Recommendations views. Its `view` input is optional; when omitted, the dashboard selects Places for draft trips, Plan for planning trips, Today for active trips, Journal for completed trips, and Recommendations for archived trips.
+
 See `docs/mcp-tools.md` for contracts and `examples/vertical-slice.md` for the existing research → plan → visit → journal → recommend → learn scenario.
 
 ## Prerequisites
@@ -85,6 +91,8 @@ ALLOWED_ORIGINS=
 Install reproducibly, check, and run:
 
 ```bash
+npm --prefix ui/travel-dashboard ci
+npm --prefix ui/travel-dashboard run build
 npm ci
 npm run check
 npm run dev
@@ -118,9 +126,11 @@ Both MCP requests must return `401`; health must remain `200`.
 ```bash
 cd mcp-server
 npm run check
+cd ui/travel-dashboard
+npm run build
 ```
 
-This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, all 23 tool names, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, and atomic commit delegation.
+This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 23 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, and the single-file dashboard build.
 
 The repository also contains a real PostgreSQL fixture at `mcp-server/test/sql/step4-integration.sql`. Run it after applying migrations to an isolated Supabase Postgres database; it verifies PostGIS ordering plus proposal commit, stale rejection, atomicity, idempotency, viewer denial, and planned-vs-actual preservation.
 
@@ -286,11 +296,11 @@ curl --fail "${PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/mcp"
 curl -i "${PUBLIC_BASE_URL}/mcp"
 ```
 
-The last request must be `401` and its `WWW-Authenticate` header must advertise the protected-resource metadata URL. Complete the OAuth login in an MCP client/Inspector, list all 12 tools, and run owner/editor/viewer/unrelated-user and write-persistence checks with real users.
+The last request must be `401` and its `WWW-Authenticate` header must advertise the protected-resource metadata URL. Complete the OAuth login in an MCP client/Inspector, list all 24 tools (23 data tools plus `show_travel_dashboard`), and run owner/editor/viewer/unrelated-user and write-persistence checks with real users.
 
 ## Automatic Fly.io deployment
 
-The GitHub Actions workflow in `.github/workflows/deploy-fly.yml` validates every relevant pull request with the full test suite and a production Docker build. A successful relevant push to `main` (or a manual workflow dispatch) deploys `mcp-server/` to the existing `travel-brain-mcp` Fly app, then verifies health, OAuth resource discovery, and the anonymous `401` boundary on `/mcp`.
+The GitHub Actions workflow in `.github/workflows/deploy-fly.yml` validates every relevant MCP server or dashboard pull request with the full test suite, dashboard build, and production Docker build. A successful relevant push to `main` (or a manual workflow dispatch) deploys the server with its embedded MCP App to the existing `travel-brain-mcp` Fly app, then verifies health, OAuth resource discovery, and the anonymous `401` boundary on `/mcp`.
 
 Create an app-scoped Fly deploy token and save it as the repository Actions secret `FLY_API_TOKEN`:
 

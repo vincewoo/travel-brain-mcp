@@ -46,6 +46,8 @@ Step 5 adds one visual launcher over those same tools:
 
 The launcher serves one embedded MCP App with Today, Plan, Places, Journal, and Recommendations views. Its `view` input is optional; when omitted, the dashboard selects Places for draft trips, Plan for planning trips, Today for active trips, Journal for completed trips, and Recommendations for archived trips.
 
+The dashboard renders every time in the trip's own timezone, matching the timezone-correct day grouping the read models already use — an itinerary in Tokyo reads on Tokyo time wherever it is opened from. When that differs from the reader's own timezone, the header says which one is in use. Trips created without an explicit `timezone` default to `UTC`, so set it on the trip to get destination-local times.
+
 See `docs/mcp-tools.md` for contracts and `examples/vertical-slice.md` for the existing research → plan → visit → journal → recommend → learn scenario.
 
 ## Prerequisites

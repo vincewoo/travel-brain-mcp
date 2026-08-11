@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { SkeletonList, Toast, ViewMessage, WorkingPill, type ToastState } from "./components/states";
 import { JournalView } from "./views/Journal";
 import { PlacesView, type PlaceFilter, type PlaceGrouping } from "./views/Places";
 import { PlanView } from "./views/Plan";
 import { RecommendationsView } from "./views/Recommendations";
 import { TodayView } from "./views/Today";
-import { dateLabel, humanize, joinMeta } from "./format";
+import { browserZone, dateLabel, humanize, joinMeta, resolveZone, zoneLabel } from "./format";
+import { ZoneProvider } from "./zone";
 import {
   app, callTool, defaultViewForTripStatus, loadJournal, loadPlaces, loadPlan,
   loadRecommendations, loadSnapshot, loadTripShell, NoTripError, parseToolJson, sendClaudeMessage,
@@ -30,6 +31,8 @@ const messageFor = (error: unknown, fallback: string) => error instanceof Error 
 const tripDates = (trip?: TripSummary | null) => trip?.start_date || trip?.end_date
   ? `${dateLabel(trip.start_date)}${trip.start_date && trip.end_date ? " – " : ""}${dateLabel(trip.end_date, true)}`
   : "Dates not set";
+/** Only worth saying when the trip is on a different clock from the reader — at home it is noise. */
+const zoneNote = (zone: string) => zone === browserZone() ? "" : `Times in ${zoneLabel(zone)}`;
 
 interface Busy { key: string; label: string; }
 interface SavedResult { detail: string; undo?: { detail: string; run: () => Promise<unknown> }; }
@@ -150,13 +153,14 @@ export default function TravelDashboard() {
   const clearPlaceFilters = () => { setQuery(""); setCity("all"); setPlaceFilter("all"); };
 
   const issueCount = plan?.issues.length ?? 0;
+  const zone = useMemo(() => resolveZone(trip?.timezone ?? snapshot?.timezone), [trip?.timezone, snapshot?.timezone]);
 
-  return <main className="dashboard" aria-busy={loading}>
+  return <ZoneProvider zone={zone}><main className="dashboard" aria-busy={loading}>
     <header className="shell-header">
       <div>
         <h1>{trip?.title ?? "Your travel dashboard"}</h1>
         <p className="shell-meta">{trip
-          ? joinMeta(humanize(trip.status ?? ""), tripDates(trip), trip.destination_summary ?? "")
+          ? joinMeta(humanize(trip.status ?? ""), tripDates(trip), trip.destination_summary ?? "", zoneNote(zone))
           : "Plan, travel, remember, and recommend in one place."}</p>
       </div>
       <button type="button" className="icon-button" aria-label="Refresh current view" disabled={loading || noTrip} onClick={() => void load(launcher, tab)}>↻</button>
@@ -214,5 +218,5 @@ export default function TravelDashboard() {
 
     {busy ? <WorkingPill label={busy.label} /> : null}
     {toast ? <Toast toast={toast} onDismiss={() => setToast(null)} /> : null}
-  </main>;
+  </main></ZoneProvider>;
 }

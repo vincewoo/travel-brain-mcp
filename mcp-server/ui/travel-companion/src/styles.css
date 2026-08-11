@@ -21,6 +21,8 @@
   --type-head: 16px; --type-row: 15px; --type-meta: 13.5px; --type-small: 13px;
   --type-note: 15px; --type-gutter: 13.5px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* The tab bar pins to the top, so everything else that sticks has to know how tall it is. */
+  --nav-height: 45px;
 }
 
 body { background: var(--surface-page); color: var(--text); overscroll-behavior-y: contain; }
@@ -40,7 +42,7 @@ body { background: var(--surface-page); color: var(--text); overscroll-behavior-
 }
 .sync-row .spacer { flex: 1 1 auto; }
 
-main { flex: 1 1 auto; padding-bottom: calc(64px + var(--safe-bottom)); }
+main { flex: 1 1 auto; padding-bottom: calc(20px + var(--safe-bottom)); }
 .view { gap: 13px; padding: 14px 16px; }
 .view.banners { padding-bottom: 0; }
 
@@ -66,6 +68,36 @@ main { flex: 1 1 auto; padding-bottom: calc(64px + var(--safe-bottom)); }
 .day-strip .chip { display: inline-flex; align-items: center; gap: 6px; }
 .day-strip .chip.today { border-color: var(--border-strong); }
 
+/* In Plan the strip is not a filter but the jump between days, so it stays reachable however far
+   down the trip you have scrolled — the same pinned treatment the Now bar gets. */
+.plan-strip {
+  position: sticky; top: var(--nav-height); z-index: 2;
+  margin: -14px -16px 0; padding: 12px 16px 10px;
+  background: color-mix(in srgb, var(--surface-page) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+/* Every day of the trip, in order: a stack on a phone, exactly as the dashboard reads. */
+.plan-days { display: grid; gap: 13px; }
+/* A jumped-to day clears the tab bar and the day strip stacked above it. */
+.plan-day { scroll-margin-top: calc(var(--nav-height) + 62px); }
+.plan-day.is-today { border-color: var(--border-strong); }
+.plan-day.is-today > .container-head:first-child { background: var(--surface-sunken); }
+/* Reservations and journal notes sit inside the day they belong to, under their own rule. */
+.plan-day .subhead { border-top: 1px solid var(--border); }
+
+/* Wide screens: the same day sections turned side by side. A tablet or a desktop window has room
+   for three or four days at once, which is the view that makes a plan checkable — Thursday next to
+   Wednesday rather than a screen apart — and the days scroll horizontally from there. */
+@media (min-width: 820px) {
+  .plan-days {
+    display: flex; align-items: start; gap: 13px;
+    overflow-x: auto; overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity; padding-bottom: 6px;
+  }
+  .plan-days > .plan-day { flex: 0 0 clamp(300px, 27vw, 360px); scroll-snap-align: start; }
+}
+
 /* Offline detail. An address you can hand to a driver is the whole point of carrying this app,
    so the local-script line is the one thing set larger than the title above it. */
 .detail { display: grid; gap: 3px; margin-top: 7px; }
@@ -79,19 +111,24 @@ main { flex: 1 1 auto; padding-bottom: calc(64px + var(--safe-bottom)); }
 .detail .link { align-self: start; color: var(--info); font-size: var(--type-meta); font-weight: 500; text-decoration: none; min-height: var(--tap-height); }
 .detail .notes { margin-top: 4px; font-size: var(--type-meta); white-space: pre-wrap; }
 
-/* Bottom nav: the same active treatment as the dashboard's tabs, moved to where a thumb reaches. */
+/* Tab bar: the dashboard's tabs, thumb-sized and pinned under the trip header. It sits at the top
+   rather than at the bottom because a Plan that lists every day of the trip is a long page, and a
+   bar that scrolls with it would be a bar you have to hunt for. Sticky, so it never leaves. */
 .nav {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
-  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
-  border-top: 1px solid var(--border); padding-bottom: var(--safe-bottom);
+  position: sticky; top: 0; z-index: 5;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; height: var(--nav-height);
+  border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-page) 94%, transparent);
   backdrop-filter: blur(8px);
 }
 .nav button {
-  border: 0; background: none; padding: 11px 4px 12px; color: var(--muted);
+  display: grid; place-items: center; border: 0; background: none; padding: 0 4px; color: var(--muted);
   font-size: var(--type-small); font-weight: 500;
 }
-.nav button.active { color: var(--text); font-weight: 600; box-shadow: inset 0 2px 0 var(--text); }
+.nav button.active { color: var(--text); font-weight: 600; box-shadow: inset 0 -2px 0 var(--text); }
+
+/* Everything else that pins hangs off the bar rather than off the window. */
+.now-bar { top: var(--nav-height); }
 
 /* Sign-in and first-run, before there is a trip to show. */
 .centre { display: grid; place-items: center; min-height: 100dvh; padding: 24px; text-align: center; }

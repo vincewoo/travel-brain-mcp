@@ -199,9 +199,13 @@ Five tabs. It should feel like a boarding pass, not a workspace.
    over the rest of today's timeline with its alerts inline, then walking-distance saved places.
    The item in progress and the one after it carry their address, local-script address and
    confirmation code without a tap. The screen you open one-handed.
-2. **Plan** — a day strip across the trip, the whole plan's issues in one list, and the selected
-   day's timeline, loose reservations, and journal notes. The shortlist still waiting for a slot
-   sits at the bottom.
+2. **Plan** — the whole plan's issues in one list, then every day of the trip in order, each with
+   its timeline, the reservations belonging to no item, and the notes written on it. A day you can
+   only read one at a time is a plan you cannot check, so the days stack down the page exactly as
+   the dashboard renders them, and on a screen wide enough (820px and up — a tablet, a laptop) the
+   same day sections turn into columns that scroll horizontally, three or four days at once. The
+   day strip across the top is not a filter but the jump: tap a date and its day comes to you. The
+   shortlist still waiting for a slot sits at the bottom.
 3. **Places** — the cached list with local filter and search (plain `Array.filter` over the
    snapshot, no server needed), status chips with live counts and grouping by category, area or
    status, each row carrying address, map deep link, the visit, and the first research findings.
@@ -225,7 +229,9 @@ label, and `timeline.ts` decides where an alert sits in a day.
 The differences that remain are the ones that are real. Control and type sizes are tokens, so the
 companion can go thumb-sized and one notch larger for reading in daylight while the dashboard stays
 pointer-sized, without either forking a rule. The companion's shell is a full-height column with a
-fixed bottom nav; the dashboard's is a panel sized by its host. And the companion adds what only a
+tab bar pinned under the trip header — at the top rather than under the thumb, because Plan is now
+a page as long as the trip and a bar that scrolled away with it would be a bar you have to hunt
+for; the dashboard's is a panel sized by its host. And the companion adds what only a
 phone needs — an address in local script, a confirmation code set large enough to read aloud, a
 straight-line distance.
 

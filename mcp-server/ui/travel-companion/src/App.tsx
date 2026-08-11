@@ -260,6 +260,20 @@ export default function App() {
         ) : null}
       </div>
 
+      <nav className="nav" aria-label="Travel Brain views">
+        {TABS.map((entry) => (
+          <button
+            type="button"
+            key={entry.key}
+            className={tab === entry.key ? "active" : ""}
+            aria-current={tab === entry.key ? "page" : undefined}
+            onClick={() => setTab(entry.key)}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </nav>
+
       <main>
         {signedOut || error || installHint ? (
           <div className="view banners">
@@ -345,20 +359,6 @@ export default function App() {
           />
         ) : null}
       </main>
-
-      <nav className="nav" aria-label="Travel Brain views">
-        {TABS.map((entry) => (
-          <button
-            type="button"
-            key={entry.key}
-            className={tab === entry.key ? "active" : ""}
-            aria-current={tab === entry.key ? "page" : undefined}
-            onClick={() => setTab(entry.key)}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </nav>
     </div>
   );
 }

@@ -5,7 +5,7 @@
  * same trip on a phone in a tunnel should not feel they have changed applications. So the palette,
  * the type ramp, the row and container vocabulary, and the status tones all live here, and each
  * app adds only its own shell — the dashboard a host-embedded panel, the companion a full-screen
- * mobile app with a bottom nav.
+ * mobile app with a pinned tab bar.
  *
  * Sizing is tokenised rather than hard-coded because the difference between the two really is
  * only that one is driven by a cursor and the other by a thumb: the companion raises the control

@@ -1,5 +1,8 @@
 /** Mirrors the `get_offline_snapshot` response. Rows, not derived views — see derive.ts. */
 
+/** The issue shape both the server's read models and this app's derivations produce. */
+export type { ClockIssue } from "../../../src/trip-clock.mjs";
+
 export interface Trip {
   id: string;
   title: string;
@@ -161,4 +164,4 @@ export interface Snapshot {
   snapshot_etag: string;
 }
 
-export type Tab = "now" | "day" | "places" | "card";
+export type Tab = "now" | "plan" | "places" | "journal" | "card";

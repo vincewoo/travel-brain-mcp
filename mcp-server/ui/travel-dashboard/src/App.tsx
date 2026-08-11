@@ -5,7 +5,7 @@ import { PlacesView, type PlaceFilter, type PlaceGrouping } from "./views/Places
 import { PlanView } from "./views/Plan";
 import { RecommendationsView } from "./views/Recommendations";
 import { TodayView } from "./views/Today";
-import { browserZone, dateLabel, humanize, joinMeta, resolveZone, zoneLabel } from "./format";
+import { browserZone, dateLabel, humanize, joinMeta, resolveZone, zoneLabel } from "../../shared/format";
 import { ZoneProvider } from "./zone";
 import {
   app, callTool, defaultViewForTripStatus, loadJournal, loadPlaces, loadPlan,

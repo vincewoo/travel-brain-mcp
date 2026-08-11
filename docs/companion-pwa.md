@@ -38,9 +38,9 @@ Three layers, each small.
   ┌─────────────────────────────────────────────────────────┐
   │ PWA (same origin as the MCP server, /app)               │
   │                                                          │
-  │   snapshot ──► local read models ──► Now / Day / Places │
-  │  (IndexedDB)   (day grouping, now/next,   / Capture      │
-  │       ▲         overlaps, nearby)              │         │
+  │   snapshot ──► local read models ──► Now / Plan / Places │
+  │  (IndexedDB)   (day grouping, now/next,  / Journal / Card│
+  │       ▲         plan issues, nearby)           │         │
   │       │                                        ▼         │
   │       │                                    outbox        │
   │       │                                  (IndexedDB)     │
@@ -89,13 +89,18 @@ local date in the trip zone, sort, find overlaps, compute now/next/then. The pie
 `localDateTime`, `sortedTimeline`, `overlapIssues`, `schedulePosition`, `researchFreshness`, plus a
 haversine for nearby.
 
-These now live in `mcp-server/src/trip-clock.mjs`, imported unchanged by both `db.mjs` and the
+`getPlanOverview` is the same kind of function one level up, so `planIssues` (overlaps, items never
+placed on a day, high-priority places left unscheduled, stale volatile research, gaps under the
+trip's configured buffer) and `planDays` were lifted out of it too.
+
+These all live in `mcp-server/src/trip-clock.mjs`, imported unchanged by both `db.mjs` and the
 companion — the module is pure `Intl` and `Date`, so it runs in Node and in a browser without
 modification, and a `.d.mts` alongside it gives the TypeScript app its types. One implementation,
 two consumers. Duplicating it is how the phone and the dashboard start disagreeing about which day
-an 11:40pm ferry belongs to. (The dashboard still has its own copies of the presentational
-helpers; folding it onto the same module is a tidy follow-up, not a correctness gap, since it
-reads its day grouping from the server.)
+an 11:40pm ferry belongs to, or about how many things are wrong with a plan.
+
+The presentational half is shared the same way, in `mcp-server/ui/shared/` — see *It has to look
+like the dashboard* below.
 
 ### 3. Outbox — durable, ordered, idempotent
 
@@ -188,16 +193,46 @@ theatre that makes the app worse. Worth a line in `docs/security.md` when this s
 
 ## Screens
 
-Four tabs. It should feel like a boarding pass, not a workspace.
+Five tabs. It should feel like a boarding pass, not a workspace.
 
-1. **Now** — current / next / then in large type, walking-distance saved places, the rest of today's
-   timeline, running-late state. The screen you open one-handed.
-2. **Day** — swipe between days; tap an item for notes, the place address, the reservation
-   confirmation code, and research findings attached to that place.
+1. **Now** — the Now bar (current item, what is next, how far behind the day is, elapsed progress)
+   over the rest of today's timeline with its alerts inline, then walking-distance saved places.
+   The item in progress and the one after it carry their address, local-script address and
+   confirmation code without a tap. The screen you open one-handed.
+2. **Plan** — a day strip across the trip, the whole plan's issues in one list, and the selected
+   day's timeline, loose reservations, and journal notes. The shortlist still waiting for a slot
+   sits at the bottom.
 3. **Places** — the cached list with local filter and search (plain `Array.filter` over the
-   snapshot, no server needed), grouped by area or category, each with address and a map deep link.
-4. **Capture** — one large text box → journal note, optionally attached to the current item or
-   place, optionally with GPS. Plus rate-the-place-I-just-left.
+   snapshot, no server needed), status chips with live counts and grouping by category, area or
+   status, each row carrying address, map deep link, the visit, and the first research findings.
+4. **Journal** — raw notes verbatim with their reaction and visit context, then recommendations
+   split firsthand / mixed evidence / research only.
+5. **Card** — the reference sheet: where you are staying, every reservation and its code,
+   dietary constraints, and the lessons this trip has already taught. Plus Forget this device.
+
+Capture — one large text box → journal note, optionally attached to the current item or place,
+optionally with GPS, plus rate-the-place-I-just-left — is Phase 2 and is not built. Until it is,
+every screen above is strictly read-only.
+
+### It has to look like the dashboard
+
+The dashboard and the companion are one product seen from two places, and a traveller who reads
+their timeline in Claude and then opens the same trip on a phone should not feel they have changed
+applications. So both front ends import `ui/shared/`: `travel-brain.css` carries the palette, the
+type ramp and the container/row/status vocabulary, `format.ts` carries every time, date and status
+label, and `timeline.ts` decides where an alert sits in a day.
+
+The differences that remain are the ones that are real. Control and type sizes are tokens, so the
+companion can go thumb-sized and one notch larger for reading in daylight while the dashboard stays
+pointer-sized, without either forking a rule. The companion's shell is a full-height column with a
+fixed bottom nav; the dashboard's is a panel sized by its host. And the companion adds what only a
+phone needs — an address in local script, a confirmation code set large enough to read aloud, a
+straight-line distance.
+
+The views themselves are derived the same way rather than reimplemented: `planIssues` and
+`planDays` live in `trip-clock.mjs` alongside the day-grouping helpers, so `get_plan_overview` and
+the phone's Plan tab cannot report different numbers of issues for the same trip. That agreement is
+asserted directly in `test/offline-companion.test.mjs`.
 
 Sync status lives in the header and opens a sheet: last sync, pending writes, failed writes, the
 "ask Claude" list.

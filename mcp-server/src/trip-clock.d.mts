@@ -36,6 +36,32 @@ export interface ClockIssue {
   item_ids: string[];
 }
 
+export interface PlaceLike {
+  locality?: string | null;
+  region?: string | null;
+  name?: string;
+}
+
+export interface TripPlaceLike {
+  place_id: string;
+  status?: string;
+  priority?: number;
+  places?: PlaceLike | null;
+}
+
+export interface ReservationLike {
+  id: string;
+  reserved_start?: string | null;
+}
+
+export interface PlanDay<T> {
+  date: string;
+  area: string | null;
+  items: T[];
+  fixed_anchors: unknown[];
+  issue_count: number;
+}
+
 export interface ResearchLike {
   status?: string;
   volatility?: string;
@@ -62,6 +88,28 @@ export function schedulePosition<T extends ClockItem>(
 ): SchedulePosition<T>;
 export function stableIssueId(type: string, itemIds: string[], date?: string): string;
 export function overlapIssues<T extends ClockItem>(items: T[], timezone: string): ClockIssue[];
+export function planIssues<T extends ClockItem & { place_id?: string | null }>(input: {
+  items?: T[];
+  tripPlaces?: TripPlaceLike[];
+  research?: (ResearchLike & { place_id?: string | null })[];
+  timezone: string;
+  minimumBufferMinutes?: number | string | null;
+  at?: Date | string | number;
+}): ClockIssue[];
+export function scheduledPlaceIds<T extends ClockItem & { place_id?: string | null }>(items: T[]): Set<string>;
+export function unscheduledTripPlaces<P extends TripPlaceLike>(
+  items: (ClockItem & { place_id?: string | null })[],
+  tripPlaces?: P[]
+): P[];
+export function planDays<T extends ClockItem & { place_id?: string | null }>(input: {
+  items?: T[];
+  reservations?: ReservationLike[];
+  tripPlaces?: TripPlaceLike[];
+  issues?: ClockIssue[];
+  timezone: string;
+  startDate?: string | null;
+  endDate?: string | null;
+}): PlanDay<T>[];
 export function researchFreshness(items: ResearchLike[] | null | undefined, now?: Date): string;
 export function dateRange(start: string | null, end: string | null): string[];
 export function haversineMeters(from: Point | null, to: Point | null): number | null;

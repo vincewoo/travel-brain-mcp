@@ -1,8 +1,16 @@
 /**
+ * How Travel Brain writes a time, a date, and a label — shared by the dashboard and the companion
+ * PWA so the same itinerary item is not "9:00 AM · Semi-flexible" on one screen and "09:00 ·
+ * semi_flexible" on the other.
+ *
  * Instants (planned_start, captured_at, …) are rendered in the trip's own timezone: a
  * traveller in Tokyo wants "9:00 AM", not the time it would be back home. Every formatter
  * that touches an instant therefore takes an IANA zone, and date-only values — which the
- * server has already bucketed into trip-local days — are formatted as calendar facts.
+ * server and `trip-clock.mjs` have already bucketed into trip-local days — are formatted as
+ * calendar facts.
+ *
+ * This is presentation only. Anything that decides *which day* an instant belongs to lives in
+ * `src/trip-clock.mjs`, the module the server shares with the phone.
  */
 
 export const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -147,3 +155,46 @@ export function plural(count: number, singular: string, pluralForm = `${singular
 
 const FLEXIBILITY_LABELS: Record<string, string> = { fixed: "Fixed", semi_flexible: "Semi-flexible", flexible: "Flexible" };
 export const flexibilityLabel = (value?: string | null) => FLEXIBILITY_LABELS[value ?? "flexible"] ?? sentence(value);
+
+/**
+ * The five tones the whole product speaks in. Anything that colours a dot, a status word or a
+ * tinted row picks one of these, on both surfaces.
+ */
+export type Tone = "muted" | "info" | "warning" | "danger" | "ok";
+
+/** `overlapIssues` says `error` for a fixed-commitment clash; `get_today` alerts say `danger`. */
+export const issueTone = (severity?: string | null): Tone =>
+  severity === "danger" || severity === "error" ? "danger"
+    : severity === "info" ? "info"
+    : "warning";
+
+/**
+ * Flexibility is metadata, so the word stays muted and only the dot carries the colour — except
+ * for "fixed", which is the one value that changes what a traveller may do about an item.
+ */
+export function flexibilityStatus(value?: string | null): { label: string; dot: Tone; text: Tone | "" } {
+  const flexibility = value ?? "flexible";
+  return {
+    label: flexibilityLabel(flexibility),
+    dot: flexibility === "fixed" ? "warning" : flexibility === "semi_flexible" ? "info" : "muted",
+    text: flexibility === "fixed" ? "warning" : "",
+  };
+}
+
+/** A saved place's standing on the trip. Stale research outranks it: it is the actionable fact. */
+export function placeStatus(tripStatus?: string | null, freshness?: string | null): { label: string; dot: Tone; text: Tone | "" } {
+  if (freshness === "stale") return { label: "Needs refresh", dot: "warning", text: "warning" };
+  const status = tripStatus ?? "shortlist";
+  return {
+    label: humanize(status),
+    dot: status === "planned" ? "info" : status === "visited" ? "ok" : status === "rejected" ? "danger" : "muted",
+    text: "",
+  };
+}
+
+/** The provenance groups a recommendation list is read in — the invariant, spelled for a reader. */
+export const RECOMMENDATION_GROUPS = [
+  { key: "firsthand", label: "Firsthand", detail: (count: number) => `you went, ${plural(count, "place")}`, empty: "Nothing you've recommended is from a visit yet." },
+  { key: "mixed", label: "Mixed evidence", detail: (count: number) => `${plural(count, "place")}`, empty: "No recommendation mixes a visit with research." },
+  { key: "research", label: "Research only", detail: (count: number) => `not visited, ${plural(count, "place")}`, empty: "Everything you'd recommend, you've actually been to." },
+] as const;

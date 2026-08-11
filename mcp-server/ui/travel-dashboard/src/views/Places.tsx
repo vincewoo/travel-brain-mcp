@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { PlaceRow } from "../components/rows";
 import { BlankSlate } from "../components/states";
-import { humanize, joinMeta } from "../format";
+import { humanize, joinMeta } from "../../../shared/format";
 import type { SavedPlace } from "../types";
 
 export const PLACE_STATUSES = ["shortlist", "planned", "visited", "rejected"] as const;

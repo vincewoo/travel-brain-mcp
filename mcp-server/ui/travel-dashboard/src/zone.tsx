@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react";
-import { browserZone } from "./format";
+import { browserZone } from "../../shared/format";
 
 /**
  * The zone every instant in the dashboard is rendered in. It is the trip's own zone, so an

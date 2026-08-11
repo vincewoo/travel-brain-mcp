@@ -99,6 +99,119 @@ export function overlapIssues(items, timezone) {
   return issues;
 }
 
+/**
+ * Everything wrong with a plan, from the rows a plan is made of: overlaps, items never placed on a
+ * day, high-priority places left off the itinerary, volatile research gone stale, and gaps below
+ * the trip's own configured buffer.
+ *
+ * `getPlanOverview` computes this for the dashboard and the companion computes it on the phone, so
+ * it lives here rather than in the read model — an itinerary that shows two issues in Claude and
+ * four on the phone is a worse failure than showing none at all.
+ */
+export function planIssues({
+  items = [],
+  tripPlaces = [],
+  research = [],
+  timezone,
+  minimumBufferMinutes = null,
+  at = new Date()
+} = {}) {
+  const now = validInstant(at, 'at_time');
+  const issues = overlapIssues(items, timezone);
+  for (const item of activeScheduledItems(items)) {
+    if (['planned', 'confirmed'].includes(item.status) && !item.planned_start) {
+      issues.push({
+        id: stableIssueId('missing_start', [item.id]), type: 'missing_start', severity: 'warning',
+        title: 'Planned item has no start time', detail: `${item.title} is not placed on a day.`, date: null, item_ids: [item.id]
+      });
+    }
+  }
+  for (const link of unscheduledTripPlaces(items, tripPlaces).filter((place) => place.priority === 5)) {
+    issues.push({
+      id: stableIssueId('high_priority_unscheduled', [link.place_id]), type: 'high_priority_unscheduled', severity: 'warning',
+      title: 'High-priority saved place is unscheduled', detail: `${link.places?.name ?? 'Saved place'} is not on the itinerary.`,
+      date: null, item_ids: [], place_ids: [link.place_id]
+    });
+  }
+  for (const placeId of scheduledPlaceIds(items)) {
+    const placeResearch = research.filter((entry) => entry.place_id === placeId);
+    if (placeResearch.some((entry) => entry.volatility === 'volatile') && researchFreshness(placeResearch, now) === 'stale') {
+      const itemIds = items.filter((item) => item.place_id === placeId).map((item) => item.id);
+      issues.push({
+        id: stableIssueId('stale_volatile_research', itemIds), type: 'stale_volatile_research', severity: 'warning',
+        title: 'Planned place has stale volatile research', detail: 'Time-sensitive research should be refreshed before relying on it.',
+        date: null, item_ids: itemIds, place_ids: [placeId]
+      });
+    }
+  }
+  const buffer = Number(minimumBufferMinutes);
+  if (Number.isFinite(buffer) && buffer > 0) {
+    const timed = sortedTimeline(activeScheduledItems(items)).filter((item) => item.planned_start && item.planned_end);
+    for (let index = 0; index < timed.length - 1; index += 1) {
+      const gap = (new Date(timed[index + 1].planned_start) - new Date(timed[index].planned_end)) / 60_000;
+      if (gap >= 0 && gap < buffer) {
+        const date = localDateTime(timed[index].planned_start, timezone).date;
+        issues.push({
+          id: stableIssueId('insufficient_buffer', [timed[index].id, timed[index + 1].id], date),
+          type: 'insufficient_buffer', severity: 'warning', title: 'Configured schedule buffer is too short',
+          detail: `${Math.round(gap)} minutes is below the configured ${buffer}-minute minimum.`,
+          date, item_ids: [timed[index].id, timed[index + 1].id]
+        });
+      }
+    }
+  }
+  return issues;
+}
+
+/** Place ids something live on the itinerary points at. */
+export function scheduledPlaceIds(items) {
+  return new Set(activeScheduledItems(items).filter((item) => item.place_id).map((item) => item.place_id));
+}
+
+/** Shortlisted places with nothing on the itinerary pointing at them — the unscheduled tray. */
+export function unscheduledTripPlaces(items, tripPlaces = []) {
+  const scheduled = scheduledPlaceIds(items);
+  return tripPlaces.filter((link) => link.status === 'shortlist' && !scheduled.has(link.place_id));
+}
+
+/**
+ * The trip as a list of days: trip dates widened to cover anything scheduled outside them, each
+ * with its items in order, the areas they sit in, its fixed anchors, and how many issues bite on
+ * it. Day grouping is in the trip's zone, always.
+ */
+export function planDays({
+  items = [],
+  reservations = [],
+  tripPlaces = [],
+  issues = [],
+  timezone,
+  startDate = null,
+  endDate = null
+} = {}) {
+  const dates = dateRange(startDate, endDate);
+  for (const item of items) {
+    if (!item.planned_start) continue;
+    const date = localDateTime(item.planned_start, timezone).date;
+    if (!dates.includes(date)) dates.push(date);
+  }
+  dates.sort();
+  const placeById = new Map(tripPlaces.map((link) => [link.place_id, link.places]));
+  return dates.map((date) => {
+    const dayItems = items.filter((item) => item.planned_start && localDateTime(item.planned_start, timezone).date === date);
+    const areas = [...new Set(dayItems.map((item) => placeById.get(item.place_id)?.locality ?? placeById.get(item.place_id)?.region).filter(Boolean))];
+    const fixedReservations = reservations.filter(
+      (reservation) => reservation.reserved_start && localDateTime(reservation.reserved_start, timezone).date === date
+    );
+    return {
+      date,
+      area: areas.length ? areas.join(' / ') : null,
+      items: sortedTimeline(dayItems),
+      fixed_anchors: [...dayItems.filter((item) => item.flexibility === 'fixed'), ...fixedReservations],
+      issue_count: issues.filter((issue) => issue.date === date || issue.item_ids?.some((id) => dayItems.some((item) => item.id === id))).length
+    };
+  });
+}
+
 export function researchFreshness(items, now = new Date()) {
   if (!items?.length) return 'missing';
   const latest = [...items].sort((a, b) => new Date(b.valid_as_of ?? b.updated_at) - new Date(a.valid_as_of ?? a.updated_at))[0];

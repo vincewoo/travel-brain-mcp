@@ -3,12 +3,20 @@ import test from 'node:test';
 import {
   addPlace,
   getOfflineSnapshot,
+  getPlanOverview,
   markPlaceVisited,
   recordJournalNote,
   rememberPreference
 } from '../src/db.mjs';
 import { createScriptedSupabase } from './support/scripted-supabase.mjs';
-import { haversineMeters, localDateTime, sortedTimeline } from '../src/trip-clock.mjs';
+import {
+  haversineMeters,
+  localDateTime,
+  planDays,
+  planIssues,
+  sortedTimeline,
+  unscheduledTripPlaces
+} from '../src/trip-clock.mjs';
 
 const ownerId = '11111111-1111-4111-8111-111111111111';
 const otherId = '22222222-2222-4222-8222-222222222222';
@@ -309,6 +317,60 @@ test('a timeline orders by actual time when it exists and planned time otherwise
     { id: 'd', planned_start: null }
   ]);
   assert.deepEqual(ordered.map((item) => item.id), ['b', 'c', 'a', 'd']);
+});
+
+/**
+ * The companion's Plan tab has no `get_plan_overview` to call offline, so it runs the same
+ * derivation over its cached rows. If the two ever produced different answers, a traveller would
+ * see three issues in Claude and two on the phone with no way to tell which was lying — so the
+ * agreement is asserted directly, on rows shaped exactly like a snapshot's.
+ */
+test('the phone derives the same plan issues and days the server read model reports', async () => {
+  const secondPlaceId = '99999999-9999-4999-8999-999999999999';
+  const bufferTrip = { ...trip, metadata: { minimum_buffer_minutes: 45 } };
+  const itinerary = [
+    { id: 'item-1', title: 'Fixed harbour tour', place_id: placeId, planned_start: '2026-12-20T01:00:00Z', planned_end: '2026-12-20T03:00:00Z', status: 'confirmed', flexibility: 'fixed' },
+    { id: 'item-2', title: 'Overlapping walk', place_id: null, planned_start: '2026-12-20T02:00:00Z', planned_end: '2026-12-20T04:00:00Z', status: 'planned', flexibility: 'flexible' },
+    { id: 'item-3', title: 'Dinner, too soon after', place_id: null, planned_start: '2026-12-20T04:15:00Z', planned_end: '2026-12-20T05:00:00Z', status: 'planned', flexibility: 'flexible' },
+    { id: 'item-4', title: 'Never placed on a day', place_id: null, planned_start: null, planned_end: null, status: 'planned', flexibility: 'flexible' },
+    { id: 'item-5', title: 'Fixed ferry, double-booked', place_id: null, planned_start: '2026-12-20T01:30:00Z', planned_end: '2026-12-20T02:30:00Z', status: 'confirmed', flexibility: 'fixed' }
+  ];
+  const reservations = [{ id: 'reservation-1', reserved_start: '2026-12-20T01:00:00Z' }];
+  const tripPlaces = [
+    { trip_id: tripId, place_id: placeId, status: 'planned', priority: 3, places: { id: placeId, name: 'Harbour', locality: 'Central' } },
+    { trip_id: tripId, place_id: secondPlaceId, status: 'shortlist', priority: 5, places: { id: secondPlaceId, name: 'Must try', locality: 'Kowloon' } }
+  ];
+  const research = [{ id: 'research-1', place_id: placeId, volatility: 'volatile', status: 'active', valid_as_of: '2026-01-01T00:00:00Z' }];
+  const at = '2026-12-20T05:00:00Z';
+
+  const scripted = context([
+    { table: 'trips', data: { id: tripId, owner_id: ownerId } },
+    { table: 'trips', data: bufferTrip },
+    { table: 'itinerary_items', data: itinerary },
+    { table: 'reservations', data: reservations },
+    { table: 'trip_places', data: tripPlaces },
+    { table: 'research_items', data: research }
+  ]);
+  const server = await getPlanOverview(scripted.ctx, tripId, at);
+
+  const issues = planIssues({
+    items: itinerary, tripPlaces, research,
+    timezone: trip.timezone, minimumBufferMinutes: bufferTrip.metadata.minimum_buffer_minutes, at
+  });
+  const days = planDays({
+    items: itinerary, reservations, tripPlaces, issues,
+    timezone: trip.timezone, startDate: trip.start_date, endDate: trip.end_date
+  });
+
+  assert.deepEqual(issues, server.issues);
+  assert.deepEqual(days, server.days);
+  assert.deepEqual(unscheduledTripPlaces(itinerary, tripPlaces), server.unscheduled_places);
+  // Every kind of issue is represented, so the agreement above is not agreement about an empty list.
+  assert.deepEqual(
+    [...new Set(issues.map((issue) => issue.type))].sort(),
+    ['fixed_commitment_overlap', 'high_priority_unscheduled', 'insufficient_buffer', 'missing_start', 'overlap', 'stale_volatile_research']
+  );
+  scripted.supabase.assertComplete();
 });
 
 test('offline distances are straight-line metres from the same coordinates the snapshot carries', () => {

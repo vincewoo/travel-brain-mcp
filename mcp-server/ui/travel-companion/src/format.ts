@@ -1,14 +1,10 @@
-/** Presentation helpers. Every clock value is the trip's, never the phone's — see derive.ts. */
-
-export function dayLabel(date: string, timezone: string): string {
-  const parsed = new Date(`${date}T12:00:00Z`);
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    timeZone: timezone,
-  }).format(parsed);
-}
+/**
+ * The formatting this app needs and the dashboard does not: how far away something is, how long
+ * ago the cache was filled, and how to get an address out of the phone and into a taxi.
+ *
+ * Everything else — times, dates, flexibility labels, status tones — comes from
+ * `ui/shared/format.ts`, shared with the dashboard so the two read identically.
+ */
 
 export function relativeSince(iso?: string): string {
   if (!iso) return "never";
@@ -24,9 +20,6 @@ export function distanceLabel(meters: number | null): string | null {
   if (meters === null) return null;
   return meters < 1000 ? `${meters} m` : `${(meters / 1000).toFixed(1)} km`;
 }
-
-export const humanize = (value?: string | null): string =>
-  (value ?? "").replace(/_/g, " ").replace(/^./, (character) => character.toUpperCase());
 
 /**
  * A map link for a place. It needs a connection to open, so it is offered as a link and never as

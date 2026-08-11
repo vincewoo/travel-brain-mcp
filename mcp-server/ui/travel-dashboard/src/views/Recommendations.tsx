@@ -1,18 +1,12 @@
 import React from "react";
 import { NoteEmpty } from "../components/states";
-import { humanize, joinMeta, plural, sentence } from "../format";
+import { humanize, joinMeta, plural, RECOMMENDATION_GROUPS, sentence } from "../../../shared/format";
 import type { RecommendationItem, RecommendationsOverview } from "../types";
 
 interface Props {
   recommendations: RecommendationsOverview;
   ask: (key: string, label: string, instruction: string) => void;
 }
-
-const GROUPS = [
-  { key: "firsthand", label: "Firsthand", detail: (count: number) => `you went, ${plural(count, "place")}`, empty: "Nothing you've recommended is from a visit yet." },
-  { key: "mixed", label: "Mixed evidence", detail: (count: number) => `${plural(count, "place")}`, empty: "No recommendation mixes a visit with research." },
-  { key: "research", label: "Research only", detail: (count: number) => `not visited, ${plural(count, "place")}`, empty: "Everything you'd recommend, you've actually been to." },
-];
 
 function Row({ item }: { item: RecommendationItem }) {
   const { recommendation: rec, place } = item;
@@ -45,7 +39,7 @@ export function RecommendationsView({ recommendations, ask }: Props) {
       </div>
       <button type="button" className="button primary" disabled={!all.length} onClick={() => ask("guide", "Asking Claude to write the guide…", "Create a friend guide with provenance, caveats, and best-for notes; never expose private journal text.")}>Generate friend guide</button>
     </div>
-    {GROUPS.map((group) => {
+    {RECOMMENDATION_GROUPS.map((group) => {
       const items = all.filter((item) => item.recommendation.provenance === group.key);
       if (!items.length) return <NoteEmpty key={group.key} title={`No ${group.label.toLowerCase()} recommendations`} detail={group.empty} />;
       return <section className="container" key={group.key}>

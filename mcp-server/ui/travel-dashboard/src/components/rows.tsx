@@ -1,25 +1,7 @@
 import React from "react";
-import { durationLabel, flexibilityLabel, humanize, joinMeta, plural, shortDateLabel, timeLabel } from "../format";
+import { durationLabel, flexibilityStatus, humanize, issueTone, joinMeta, placeStatus, plural, shortDateLabel, timeLabel } from "../../../shared/format";
 import type { PlanningIssue, SavedPlace, TimelineItem } from "../types";
 import { useZone } from "../zone";
-
-type Tone = "muted" | "info" | "warning" | "danger" | "ok";
-
-export const issueTone = (severity?: string | null): Tone =>
-  severity === "danger" ? "danger" : severity === "info" ? "info" : "warning";
-
-/** Flexibility is metadata, so the word stays muted; only the dot carries the colour, and only "fixed" is loud. */
-function flexibility(item: TimelineItem) {
-  const value = item.flexibility ?? "flexible";
-  return { label: flexibilityLabel(value), dot: value === "fixed" ? "warning" : value === "semi_flexible" ? "info" : "muted", text: value === "fixed" ? "warning" : "" };
-}
-
-export function placeStatus(place: SavedPlace): { label: string; dot: Tone; text: Tone | "" } {
-  if (place.freshness === "stale") return { label: "Needs refresh", dot: "warning", text: "warning" };
-  const status = place.trip_status ?? "shortlist";
-  const dot: Tone = status === "planned" ? "info" : status === "visited" ? "ok" : status === "rejected" ? "danger" : "muted";
-  return { label: humanize(status), dot, text: "" };
-}
 
 interface TimelineRowProps {
   item: TimelineItem;
@@ -42,7 +24,7 @@ export function TimelineRow({ item, phase, current, busy, onDone, onSkip, onAdju
   const start = phase === "active" ? item.actual_start ?? item.planned_start : item.planned_start;
   const shifted = item.actual_start && item.planned_start && timeLabel(item.actual_start, zone) !== timeLabel(item.planned_start, zone);
   const under = current ? "now" : durationLabel(item.actual_start ?? item.planned_start, item.actual_end ?? item.planned_end);
-  const flex = flexibility(item);
+  const flex = flexibilityStatus(item.flexibility);
 
   return <article className={`row timeline-row${inactive ? " is-done" : ""}${current ? " is-current" : ""}`}>
     <div className={`time-gutter${inactive ? " past" : ""}${current ? " current" : ""}`}>
@@ -107,7 +89,7 @@ export function IssueRow({ issue }: { issue: PlanningIssue }) {
 }
 
 export function PlaceRow({ place, busy, onPlan }: { place: SavedPlace; busy?: boolean; onPlan?: (place: SavedPlace) => void }) {
-  const status = placeStatus(place);
+  const status = placeStatus(place.trip_status, place.freshness);
   const meta = joinMeta(
     humanize(place.category ?? "place"),
     place.locality ?? place.region ?? "",

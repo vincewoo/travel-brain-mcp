@@ -14,6 +14,7 @@ import {
   createSupabaseTokenVerifier,
   loadSupabaseOAuthMetadata
 } from './auth.mjs';
+import { installCompanionRoutes } from './companion-app.mjs';
 import { loadConfig } from './config.mjs';
 import { createDbContext, ensureProfile } from './db.mjs';
 import { registerTravelDashboardUi } from './dashboard-ui.mjs';
@@ -83,6 +84,7 @@ export async function createApplication(config, dependencies = {}) {
     res.json({ ok: true, service: 'travel-brain-mcp', version: SERVER_INFO.version });
   });
   installOAuthConsentRoutes(app, config);
+  installCompanionRoutes(app, dependencies);
 
   let resourceMetadataUrl;
   let verifier;

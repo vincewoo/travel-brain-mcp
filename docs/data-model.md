@@ -24,7 +24,7 @@ Planned and actual timeline data. Has flexibility (`fixed`, `semi_flexible`, `fl
 Reservation facts and confirmation metadata. Consequential external cancellation/purchase actions are intentionally out of scope for v0.1.
 
 ### `place_visits`
-Firsthand experience record. Stores actual timing, rating, return intent, and recommendation level.
+Firsthand experience record. Stores actual timing, rating, return intent, and recommendation level. `metadata` exists only to carry a `client_op_id` for idempotent offline replay.
 
 ### `journal_entries`
 Raw note is preserved. AI-generated summaries are separate. Supports private/trip/shareable visibility.
@@ -51,6 +51,10 @@ Metadata for Supabase Storage objects. The binary objects remain in Storage.
 
 ### `share_guides` / `share_guide_items`
 Private draft structure for future curated friend-facing guides. Public sharing policies are intentionally not enabled in v0.1.
+
+## Offline replay keys
+
+`journal_entries`, `places`, `memories`, and `place_visits` each carry a partial unique index on `metadata->>'client_op_id'`, scoped to the writer. They are inert for interactive callers and exist so a companion app replaying a queued write after a lost response cannot create a second row. See `docs/companion-pwa.md`.
 
 ## Embeddings
 

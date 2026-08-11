@@ -1,6 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { zonedInstant, zonedInstants } from './instants.mjs';
+import {
+  activeScheduledItems,
+  dateRange,
+  localDateTime,
+  overlapIssues,
+  researchFreshness,
+  schedulePosition,
+  sortedTimeline,
+  stableIssueId,
+  timelineInstant,
+  validInstant
+} from './trip-clock.mjs';
 
 /** Timestamps a caller may send as a trip-local wall clock rather than as an absolute instant. */
 const ITINERARY_INSTANTS = ['planned_start', 'planned_end', 'actual_start', 'actual_end'];
@@ -165,6 +177,49 @@ export async function getTrip(ctx, tripId) {
   };
 }
 
+/**
+ * Append-only writes replayed from an offline queue.
+ *
+ * A companion app that captures a journal note in a tunnel sends it when the signal returns, and
+ * if the response is lost on the way back it will send it again. `insert` alone would write the
+ * note twice. When the caller supplies a `client_op_id` these writes become idempotent: the
+ * operation is looked up first, and the unique indexes from `202608110003_offline_snapshot.sql`
+ * catch the concurrent case where two replays race. Either way the original row is what comes
+ * back, so a replay is indistinguishable from the first call — which is the point.
+ *
+ * Callers that pass no `client_op_id` (the planning agent, mostly) skip the lookup entirely and
+ * keep the single-insert query sequence they always had.
+ */
+function clientOpMetadata(input) {
+  const metadata = input.metadata ?? {};
+  return input.client_op_id ? { ...metadata, client_op_id: input.client_op_id } : metadata;
+}
+
+async function findClientOp(ctx, table, clientOpId, scope, context) {
+  let query = ctx.supabase.from(table).select('*').eq('metadata->>client_op_id', clientOpId);
+  for (const [column, value] of Object.entries(scope)) query = query.eq(column, value);
+  const { data, error } = await query.maybeSingle();
+  fail(error, context);
+  return data ?? null;
+}
+
+async function insertOnce(ctx, table, record, input, scope, context) {
+  const clientOpId = input.client_op_id ?? null;
+  if (clientOpId) {
+    const existing = await findClientOp(ctx, table, clientOpId, scope, `${context} replay lookup`);
+    if (existing) return existing;
+  }
+  const { data, error } = await ctx.supabase.from(table).insert(record).select('*').single();
+  // 23505 is the unique-violation the client-op index raises when a concurrent replay of the same
+  // operation committed between the lookup above and this insert. Its row is the answer.
+  if (error?.code === '23505' && clientOpId) {
+    const raced = await findClientOp(ctx, table, clientOpId, scope, `${context} replay lookup`);
+    if (raced) return raced;
+  }
+  fail(error, context);
+  return data;
+}
+
 export async function addPlace(ctx, input) {
   const { supabase, actorId } = ctx;
   if (input.trip_id) await tripAccess(ctx, input.trip_id, true);
@@ -178,14 +233,13 @@ export async function addPlace(ctx, input) {
     region: input.region ?? null,
     country_code: input.country_code ?? null,
     external_ids: input.external_ids ?? {},
-    metadata: input.metadata ?? {}
+    metadata: clientOpMetadata(input)
   };
   if (input.latitude != null && input.longitude != null) {
     record.location = `POINT(${input.longitude} ${input.latitude})`;
   }
 
-  const { data: place, error } = await supabase.from('places').insert(record).select('*').single();
-  fail(error, 'addPlace');
+  const place = await insertOnce(ctx, 'places', record, input, { created_by: actorId }, 'addPlace');
 
   if (input.trip_id) {
     const { error: linkError } = await supabase.from('trip_places').upsert({
@@ -316,7 +370,7 @@ export async function saveResearchFinding(ctx, input) {
 }
 
 export async function recordJournalNote(ctx, input) {
-  const { supabase, actorId } = ctx;
+  const { actorId } = ctx;
   const access = await tripAccess(ctx, input.trip_id, true);
   const record = {
     trip_id: input.trip_id,
@@ -327,14 +381,19 @@ export async function recordJournalNote(ctx, input) {
     raw_note: input.raw_note,
     reaction: input.reaction ?? null,
     visibility: input.visibility ?? 'private',
-    metadata: input.metadata ?? {}
+    metadata: clientOpMetadata(input)
   };
   if (input.latitude != null && input.longitude != null) {
     record.location = `POINT(${input.longitude} ${input.latitude})`;
   }
-  const { data, error } = await supabase.from('journal_entries').insert(record).select('*').single();
-  fail(error, 'recordJournalNote');
-  return data;
+  return insertOnce(
+    ctx,
+    'journal_entries',
+    record,
+    input,
+    { trip_id: input.trip_id, author_id: actorId },
+    'recordJournalNote'
+  );
 }
 
 export async function markPlaceVisited(ctx, input) {
@@ -349,7 +408,7 @@ export async function markPlaceVisited(ctx, input) {
     zone = item.timezone ?? zone;
   }
   const visited = zonedInstants(input, ['arrived_at', 'departed_at'], zone);
-  const { data: visit, error } = await supabase.from('place_visits').insert({
+  const record = {
     trip_id: input.trip_id,
     place_id: input.place_id,
     itinerary_item_id: input.itinerary_item_id ?? null,
@@ -359,8 +418,19 @@ export async function markPlaceVisited(ctx, input) {
     would_return: input.would_return ?? null,
     recommendation: input.recommendation ?? 'none',
     notes: input.notes ?? null
-  }).select('*').single();
-  fail(error, 'markPlaceVisited');
+  };
+  if (input.client_op_id || input.metadata) record.metadata = clientOpMetadata(input);
+  // The trip-place and itinerary updates below stay outside the replay check on purpose: they are
+  // upserts and same-value updates, so re-running them after a half-completed first attempt is
+  // how the visit's side effects converge rather than something to skip.
+  const visit = await insertOnce(
+    ctx,
+    'place_visits',
+    record,
+    input,
+    { trip_id: input.trip_id, place_id: input.place_id },
+    'markPlaceVisited'
+  );
 
   const { error: linkError } = await supabase.from('trip_places').upsert({
     trip_id: input.trip_id,
@@ -380,9 +450,9 @@ export async function markPlaceVisited(ctx, input) {
 }
 
 export async function rememberPreference(ctx, input) {
-  const { supabase, actorId } = ctx;
+  const { actorId } = ctx;
   if (input.trip_id) await tripAccess(ctx, input.trip_id, false);
-  const { data, error } = await supabase.from('memories').insert({
+  const record = {
     owner_id: actorId,
     trip_id: input.trip_id ?? null,
     memory_type: input.memory_type ?? 'preference',
@@ -390,11 +460,10 @@ export async function rememberPreference(ctx, input) {
     confidence: input.confidence ?? (input.provenance === 'inferred' ? 0.6 : 1.0),
     status: input.status ?? (input.provenance === 'inferred' ? 'candidate' : 'confirmed'),
     provenance: input.provenance ?? 'explicit',
-    metadata: input.metadata ?? {},
+    metadata: clientOpMetadata(input),
     last_confirmed_at: (input.status === 'confirmed' || (!input.status && input.provenance !== 'inferred')) ? new Date().toISOString() : null
-  }).select('*').single();
-  fail(error, 'rememberPreference');
-  return data;
+  };
+  return insertOnce(ctx, 'memories', record, input, { owner_id: actorId }, 'rememberPreference');
 }
 
 export async function recommendPlace(ctx, input) {
@@ -455,103 +524,6 @@ export async function searchTravelBrain(ctx, query, tripId = null) {
     journal: results[2].data ?? [],
     recommendations: results[3].data ?? []
   };
-}
-
-function validInstant(value, name) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) throw new Error(`${name} must be a valid timestamp.`);
-  return date;
-}
-
-function localDateTime(value, timezone) {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23'
-    }).formatToParts(validInstant(value, 'timestamp')).map((part) => [part.type, part.value])
-  );
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
-}
-
-function timelineInstant(item) {
-  return item.actual_start ?? item.planned_start ?? null;
-}
-
-function sortedTimeline(items) {
-  return [...items].sort((a, b) => {
-    const left = timelineInstant(a);
-    const right = timelineInstant(b);
-    if (!left) return right ? 1 : a.id.localeCompare(b.id);
-    if (!right) return -1;
-    return new Date(left) - new Date(right) || a.id.localeCompare(b.id);
-  });
-}
-
-function activeScheduledItems(items) {
-  return items.filter((item) => !['cancelled', 'skipped'].includes(item.status));
-}
-
-function itemForInstant(item, instant) {
-  const start = item.actual_start ?? item.planned_start;
-  const end = item.actual_end ?? item.planned_end;
-  if (!start) return false;
-  return new Date(start) <= instant && (!end || instant <= new Date(end));
-}
-
-function schedulePosition(items, instant, currentItemId = null) {
-  const scheduled = sortedTimeline(activeScheduledItems(items)).filter((item) => timelineInstant(item));
-  const current = (currentItemId && scheduled.find((item) => item.id === currentItemId))
-    || scheduled.find((item) => itemForInstant(item, instant))
-    || null;
-  const following = scheduled.filter((item) => new Date(timelineInstant(item)) > instant && item.id !== current?.id);
-  return { now: current, next: following[0] ?? null, then: following[1] ?? null };
-}
-
-function stableIssueId(type, itemIds, date = '') {
-  return `${type}:${date}:${[...itemIds].sort().join(':')}`;
-}
-
-function overlapIssues(items, timezone) {
-  const timed = activeScheduledItems(items)
-    .filter((item) => item.planned_start && item.planned_end)
-    .sort((a, b) => new Date(a.planned_start) - new Date(b.planned_start) || a.id.localeCompare(b.id));
-  const issues = [];
-  for (let index = 0; index < timed.length; index += 1) {
-    for (let otherIndex = index + 1; otherIndex < timed.length; otherIndex += 1) {
-      const left = timed[index];
-      const right = timed[otherIndex];
-      if (new Date(right.planned_start) >= new Date(left.planned_end)) break;
-      if (new Date(right.planned_end) <= new Date(left.planned_start)) continue;
-      const fixed = left.flexibility === 'fixed' && right.flexibility === 'fixed';
-      const date = localDateTime(left.planned_start, timezone).date;
-      const type = fixed ? 'fixed_commitment_overlap' : 'overlap';
-      issues.push({
-        id: stableIssueId(type, [left.id, right.id], date),
-        type,
-        severity: fixed ? 'error' : 'warning',
-        title: fixed ? 'Fixed commitments overlap' : 'Two itinerary items overlap',
-        detail: `${left.title} overlaps ${right.title}.`,
-        date,
-        item_ids: [left.id, right.id]
-      });
-    }
-  }
-  return issues;
-}
-
-function researchFreshness(items, now = new Date()) {
-  if (!items?.length) return 'missing';
-  const latest = [...items].sort((a, b) => new Date(b.valid_as_of ?? b.updated_at) - new Date(a.valid_as_of ?? a.updated_at))[0];
-  if (latest.status === 'stale' || (latest.expires_at && new Date(latest.expires_at) < now)) return 'stale';
-  const ageDays = (now - new Date(latest.valid_as_of ?? latest.updated_at)) / 86_400_000;
-  if (latest.volatility === 'volatile' && ageDays > 30) return 'stale';
-  if (latest.volatility === 'semi_volatile' && ageDays > 180) return 'stale';
-  return 'fresh';
 }
 
 function parsePoint(location) {
@@ -783,18 +755,6 @@ export async function getNearbySavedPlaces(ctx, input) {
       research_freshness: researchFreshness((results[3].data ?? []).filter((research) => research.place_id === row.place_id), now)
     }))
   };
-}
-
-function dateRange(start, end) {
-  if (!start || !end) return [];
-  const dates = [];
-  const cursor = new Date(`${start}T00:00:00Z`);
-  const finish = new Date(`${end}T00:00:00Z`);
-  while (cursor <= finish && dates.length < 366) {
-    dates.push(cursor.toISOString().slice(0, 10));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return dates;
 }
 
 export async function getPlanOverview(ctx, tripId, atTime = new Date()) {
@@ -1082,6 +1042,121 @@ export async function proposeItineraryChange(ctx, input) {
   }).select('*').single();
   fail(error, 'proposeItineraryChange');
   return { proposal, diff };
+}
+
+/**
+ * Rebuild the `trip_places` + joined `places` shape the other read models return, from the flat
+ * rows `trip_offline_places` hands back. Same shape as `getTrip`, with the point the geography
+ * column cannot express over PostgREST.
+ */
+function offlinePlaceRow(row) {
+  return {
+    trip_id: row.trip_id,
+    place_id: row.place_id,
+    status: row.status,
+    priority: row.priority,
+    note: row.note,
+    first_researched_at: row.first_researched_at,
+    last_researched_at: row.last_researched_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    places: {
+      id: row.place_id,
+      name: row.place_name,
+      normalized_name: row.normalized_name,
+      category: row.category,
+      address: row.address,
+      locality: row.locality,
+      region: row.region,
+      country_code: row.country_code,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      external_ids: row.external_ids,
+      metadata: row.place_metadata,
+      created_at: row.place_created_at,
+      updated_at: row.place_updated_at
+    }
+  };
+}
+
+/**
+ * The most recent `updated_at` across everything in the snapshot, plus a row count. A companion
+ * comparing two snapshots can skip rewriting its store when this is unchanged; it is a cache
+ * validator, not a version number, and nothing branches on it server-side.
+ */
+function snapshotEtag(collections) {
+  let latest = '';
+  let rows = 0;
+  for (const collection of collections) {
+    for (const row of collection) {
+      rows += 1;
+      for (const stamp of [row.updated_at, row.created_at, row.captured_at]) {
+        if (typeof stamp === 'string' && stamp > latest) latest = stamp;
+      }
+    }
+  }
+  return `${rows}-${latest || 'empty'}`;
+}
+
+/**
+ * One trip, whole, in a single round trip — the offline companion's entire read protocol.
+ *
+ * On a connection that drops halfway through a Guangzhou metro tunnel, one request that either
+ * lands or does not is worth more than seven that each might. This is `getTrip` plus the three
+ * things a cached copy needs and that call cannot give: real coordinates, the traveller's stored
+ * lessons and preferences, and the live-state row. It stays a read model — no derived day
+ * grouping, no now/next — because the phone recomputes those from these rows as its clock moves,
+ * and a cached "today" is wrong by morning.
+ */
+export async function getOfflineSnapshot(ctx, tripId, atTime = new Date()) {
+  const trip = await loadTrip(ctx, tripId);
+  const queries = await Promise.all([
+    ctx.supabase.from('itinerary_items').select('*').eq('trip_id', tripId).order('planned_start', { ascending: true }),
+    ctx.supabase.from('reservations').select('*').eq('trip_id', tripId).order('reserved_start', { ascending: true }),
+    ctx.supabase.rpc('trip_offline_places', { p_trip_id: tripId }),
+    ctx.supabase.from('place_visits').select('*').eq('trip_id', tripId),
+    ctx.supabase.from('journal_entries').select('*').eq('trip_id', tripId).order('captured_at', { ascending: false }),
+    ctx.supabase.from('research_items').select('*, research_sources(*)').eq('trip_id', tripId),
+    ctx.supabase.from('recommendations').select('*').eq('trip_id', tripId),
+    ctx.supabase.from('memories').select('*').eq('owner_id', ctx.actorId).or(`trip_id.eq.${tripId},trip_id.is.null`),
+    ctx.supabase.from('current_trip_state').select('*').eq('trip_id', tripId).maybeSingle()
+  ]);
+  for (const result of queries) fail(result.error, 'getOfflineSnapshot');
+
+  const itinerary = queries[0].data ?? [];
+  const reservations = queries[1].data ?? [];
+  const places = (queries[2].data ?? []).map(offlinePlaceRow);
+  const visits = queries[3].data ?? [];
+  // Same visibility rule as getTrip: another member's private notes are not the caller's to cache.
+  const journal = (queries[4].data ?? []).filter(
+    (entry) => entry.author_id === ctx.actorId || entry.visibility !== 'private'
+  );
+  const research = queries[5].data ?? [];
+  const recommendations = queries[6].data ?? [];
+  const memories = queries[7].data ?? [];
+  const currentState = queries[8].data ?? null;
+  const instant = validInstant(atTime, 'at_time');
+
+  return {
+    trip,
+    itinerary,
+    reservations,
+    places,
+    visits,
+    journal,
+    research,
+    recommendations,
+    lessons: memories.filter((memory) => memory.memory_type === 'trip_lesson' && memory.trip_id === tripId),
+    preferences: memories.filter((memory) => memory.memory_type === 'preference'),
+    current_state: currentState,
+    location: locationView(currentState, instant, ctx.locationFreshnessMinutes ?? 30),
+    // The phone renders every time in the trip's zone, so it needs to know how far its own clock
+    // has drifted before it trusts itself to say what is happening now.
+    server_time: instant.toISOString(),
+    snapshot_etag: snapshotEtag([
+      [trip], itinerary, reservations, places, visits, journal, research, recommendations, memories
+    ])
+  };
 }
 
 export async function commitItineraryChange(ctx, proposalId) {

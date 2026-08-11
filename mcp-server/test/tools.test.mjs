@@ -25,11 +25,12 @@ const expectedTools = [
   'get_recent_journal',
   'get_recommendations',
   'get_trip_lessons',
+  'get_offline_snapshot',
   'propose_itinerary_change',
   'commit_itinerary_change'
 ];
 
-test('the original 12, all 11 Step 4, and the itinerary removal MCP tool names remain registered', () => {
+test('the original 12, all 11 Step 4, itinerary removal, and the offline snapshot MCP tool names remain registered', () => {
   const names = [];
   const server = {
     registerTool(name) {

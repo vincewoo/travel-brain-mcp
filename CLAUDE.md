@@ -26,19 +26,26 @@ The HTTP integration test binds a loopback port and is skipped unless opted in:
 TRAVEL_BRAIN_NETWORK_TESTS=1 npm test
 ```
 
-The dashboard is a separate npm project that must be built before the server tests that assert on
-its bundle, and before running the server (the MCP App resource reads the built HTML):
+Two separate npm projects under `ui/` must be built before the server tests that assert on their
+bundles, and before running the server (the MCP App resource reads the built HTML; `/app` serves the
+companion's `dist/`):
 
 ```bash
 npm --prefix ui/travel-dashboard ci
 npm --prefix ui/travel-dashboard run build   # tsc --noEmit + vite → dist/mcp-app.html (single file)
+npm --prefix ui/travel-companion ci
+npm --prefix ui/travel-companion run build   # tsc --noEmit + vite → dist/ (shell, worker, manifest)
 ```
+
+The server starts without either build; the dashboard resource then fails to load and `/app` is not
+served (`companion_app=absent` in the log).
 
 Database migrations live in `supabase/migrations/` and are applied in filename order (`supabase db
 push`, or pasted into the Supabase SQL editor). They are append-only — add a new timestamped file
 rather than editing an applied one. `mcp-server/test/sql/step4-integration.sql` is a fixture to run
 against a real Postgres after migrating; it covers PostGIS ordering, proposal commit/staleness,
-atomicity, viewer denial, and the itinerary-removal history guard.
+atomicity, viewer denial, the itinerary-removal history guard, `trip_offline_places` coordinates,
+and the `client_op_id` replay indexes.
 
 ## Architecture
 
@@ -74,6 +81,13 @@ reachable from an unauthenticated route.
 - `db.mjs` — all data access, all authorization (`tripAccess`), all invariants, and the Step 4 read
   models. This is where behavior lives.
 - `instants.mjs` — timestamp discipline (see below).
+- `trip-clock.mjs` — pure derivations over trip rows: local day/time in a zone, timeline ordering,
+  now/next/then, overlap issues, research freshness, haversine. No Supabase, no config, `Intl` and
+  `Date` only, so it runs in Node and in a browser. `db.mjs` and the companion PWA import the same
+  file; `trip-clock.d.mts` types it for the TypeScript app. Put a new derivation here rather than
+  inline in a read model if the companion also needs to compute it offline.
+- `companion-app.mjs` — serves the built companion PWA at `/app` (static shell plus an SPA fallback
+  so `/app/callback` can finish the OAuth exchange).
 - `dashboard-ui.mjs` — registers the `show_travel_dashboard` tool plus the `ui://travel-brain/
   dashboard.html` MCP App resource, reading the built single-file HTML from `dashboard/` (Docker
   image) or `ui/travel-dashboard/dist/` (repo).
@@ -105,6 +119,20 @@ and stable pre-generated IDs for adds; the commit is a single security-definer R
 whitelist, and applies everything or nothing. Stale versions return `STALE_PROPOSAL`. Repeated
 commits are idempotent.
 
+### The companion PWA is a cache, not a second source of truth
+
+`ui/travel-companion` is an installable offline app served at `/app` on the same origin as `/mcp`,
+for the parts of a trip with no usable connection and therefore no Claude. It reads through one
+tool, `get_offline_snapshot` (a whole trip in one round trip, rows rather than derived day views),
+stores those rows in IndexedDB, and recomputes Today/nearby on the device via `trip-clock.mjs`.
+Caching a derived `get_today` instead would be wrong once local midnight passes.
+
+It is its own OAuth 2.1 client; the shell is public and holds no trip data. Phase 1 is read-only.
+Phase 2 adds an outbox limited to writes that append or record what already happened — the
+`client_op_id` idempotency on `add_place`, `record_journal_note`, `mark_place_visited`, and
+`remember_preference` exists for that replay. `update_current_trip_state` is deliberately never
+queued: a location delivered four hours late is a false statement. See `docs/companion-pwa.md`.
+
 ### The dashboard is an MCP App, not a second service
 
 `ui/travel-dashboard` is a React/Vite app inlined to one HTML file and served as an MCP resource
@@ -130,6 +158,8 @@ These are enforced in code and asserted in tests; breaking one is a product bug,
   `fresh`/`stale`/`missing`. Do not add a passive GPS trail.
 - Tools mutate Travel Brain only. No purchases, cancellations, or messages to external systems.
 - Embeddings stay optional; there is no OpenAI dependency.
+- Offline replay keys (`client_op_id`) are scoped per writer, and a replayed append returns the
+  original row rather than inserting a second one.
 
 `agent/TRAVEL_AGENT.md` states the matching behavioral contract for the planning/concierge agent.
 

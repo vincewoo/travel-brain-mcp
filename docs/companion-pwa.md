@@ -1,6 +1,9 @@
 # Companion PWA (offline trip reference)
 
-Status: design proposal. Nothing here is built yet.
+Status: Phase 0 and Phase 1 are built. Phase 2 (capture) and Phase 3 are still design.
+
+Build and run it with the commands in the root `README.md`; the tool contract is in
+`docs/mcp-tools.md` and the device exposure is in `docs/security.md`.
 
 ## The problem this solves
 
@@ -55,7 +58,7 @@ trip_places with joined places, visits, journal, research with sources, recommen
 two-bar connection, one request that either succeeds or does not is worth far more than seven
 chatty ones, so the sync protocol is essentially already designed.
 
-Four gaps to close, in a new read-only `get_offline_snapshot({ trip_id })` that wraps `getTrip`:
+Four gaps closed, in a read-only `get_offline_snapshot({ trip_id })` that wraps `getTrip`:
 
 - **Coordinates.** `places.location` is a PostGIS geography; PostgREST hands it back as EWKB hex and
   nothing client-side can read it. Distances are computed exclusively server-side today
@@ -86,10 +89,13 @@ local date in the trip zone, sort, find overlaps, compute now/next/then. The pie
 `localDateTime`, `sortedTimeline`, `overlapIssues`, `schedulePosition`, `researchFreshness`, plus a
 haversine for nearby.
 
-`instants.mjs` is pure `Intl` and `Date` — it runs unmodified in a browser. That suggests the right
-move: extract the timezone and derivation logic into a shared module consumed by the server, the
-dashboard, and the PWA. Duplicating it is how the phone and the dashboard start disagreeing about
-which day an 11:40pm ferry belongs to.
+These now live in `mcp-server/src/trip-clock.mjs`, imported unchanged by both `db.mjs` and the
+companion — the module is pure `Intl` and `Date`, so it runs in Node and in a browser without
+modification, and a `.d.mts` alongside it gives the TypeScript app its types. One implementation,
+two consumers. Duplicating it is how the phone and the dashboard start disagreeing about which day
+an 11:40pm ferry belongs to. (The dashboard still has its own copies of the presentational
+helpers; folding it onto the same module is a tidy follow-up, not a correctness gap, since it
+reads its day grouping from the server.)
 
 ### 3. Outbox — durable, ordered, idempotent
 
@@ -124,17 +130,20 @@ anything with a judgement in it. Instead the app keeps an **"ask Claude" list** 
 its trip/item context — and when back online offers a prepared prompt to hand over. The app never
 pretends to answer it.
 
-### Idempotency (needs a server change)
+### Idempotency
 
-`update_itinerary_item` and `mark_place_visited` are naturally idempotent — replaying them sets the
-same fields again. `record_journal_note`, `add_place`, and `remember_preference` are not. A response
-lost after the server committed means the retry writes a second copy, which on a flaky connection is
-how you end up with every journal note duplicated.
+`update_itinerary_item` is naturally idempotent — replaying it sets the same fields again.
+`record_journal_note`, `add_place`, `remember_preference`, and `mark_place_visited` are not: all
+four insert. (An earlier draft of this document called `mark_place_visited` idempotent. It is not —
+it writes a new `place_visits` row every call, and a duplicate visit is worse than clutter, because
+a visit is the evidence a `firsthand` recommendation is checked against.)
 
-Fix: accept an optional `client_op_id` on those three tools, store it in the existing `metadata`
-column, add a partial unique index, and return the existing row on conflict. The alternative —
-letting the client choose the primary key and upserting — is fewer moving parts but a bigger change
-to the write path, and `client_op_id` doubles as an audit trail of which device wrote what.
+Built: those four tools accept an optional `client_op_id`, stored in the row's `metadata`, with
+partial unique indexes scoped per writer. `place_visits` had no `metadata` column and gained one.
+The tool looks the operation up first and returns the original row; the index catches the race
+where two replays arrive at once. A replay is indistinguishable from the first call, including in
+the response — there is no replay flag, because idempotent means the caller should not have to
+care.
 
 ### Conflicts
 
@@ -202,14 +211,27 @@ seven days unless the app is installed. Onboarding has to insist on it.
 
 ## Sequencing
 
-- **Phase 0 (server).** `get_offline_snapshot` with coordinates, lessons, and trip state;
-  `client_op_id` on the three append tools; static route at `/app`; register the OAuth client.
-- **Phase 1 (read-only PWA).** OAuth, snapshot, IndexedDB, the four screens, local search, staleness
-  banner, install prompt. This is the whole ask — offline reference — and it ships alone.
-- **Phase 2 (capture).** Outbox, the five safe writes, needs-attention list.
+- **Phase 0 (server) — done.** `get_offline_snapshot` with coordinates, lessons, and trip state;
+  `client_op_id` on the four append tools; `trip_offline_places` and the replay indexes in
+  `202608110003_offline_snapshot.sql`; static route at `/app`. Registering the OAuth client is an
+  operator step, in the root `README.md`.
+- **Phase 1 (read-only PWA) — done.** `ui/travel-companion`: OAuth via the MCP client SDK,
+  snapshot into IndexedDB, Now / Plan / Places / Card, local search, staleness banner, service
+  worker, install hint, and erase-from-device.
+- **Phase 2 (capture) — next.** Outbox, the five safe writes, needs-attention list.
 - **Phase 3.** "Ask Claude" handoff, photos into Supabase Storage, pending-proposal display.
 
-Phase 1 before the trip. Phase 2 is convenience.
+### What Phase 1 does not do
+
+It reads. There is no capture yet, so a journal note or a Mark Done still needs Claude and a
+connection. The `client_op_id` plumbing exists ahead of that so Phase 2 is the outbox and nothing
+else.
+
+Two things are worth knowing before the trip. The shell is ~143 KB gzipped, most of it the MCP
+client SDK, fetched once and then precached — fine on arrival wifi, slow on a bad hotel connection.
+And the app derives nearby distances from the device GPS only when the traveller taps **Locate**;
+it does not track position, and Phase 1 writes nothing back, so the server's last-known location is
+only ever as fresh as Claude last made it.
 
 ## Deliberately not building
 

@@ -35,12 +35,17 @@ jobs:
           cache-dependency-path: |
             mcp-server/package-lock.json
             mcp-server/ui/travel-dashboard/package-lock.json
+            mcp-server/ui/travel-companion/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build unified dashboard
         working-directory: mcp-server/ui/travel-dashboard
+        run: npm ci && npm run build
+
+      - name: Build offline companion
+        working-directory: mcp-server/ui/travel-companion
         run: npm ci && npm run build
 
       - name: Run checks and HTTP integration tests

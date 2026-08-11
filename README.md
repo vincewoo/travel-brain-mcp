@@ -48,6 +48,18 @@ Cancelling an item is a record ("we had this booked and it did not happen"); whi
 
 The `202608110002_itinerary_removal.sql` migration also performs a one-time cleanup, deleting the `cancelled` and `skipped` rows already in the database under that same guard. Every one of them was written before removal existed, so they are the cruft this feature prevents; rows with any recorded history are left untouched. The migration reports how many it removed as a `NOTICE`.
 
+The offline companion adds one more read tool over the same data:
+
+- `get_offline_snapshot`
+
+It returns a whole trip in a single call — itinerary, reservations, places *with coordinates*,
+visits, journal, research, recommendations, stored lessons and preferences, and live state — for a
+client that has to work with no connection. It returns rows rather than derived day views, because
+a cached "today" is wrong once local midnight passes; the client recomputes the day grouping from
+the same `src/trip-clock.mjs` the read models use. `add_place`, `record_journal_note`,
+`mark_place_visited`, and `remember_preference` also accept an optional `client_op_id` so a queued
+write replayed after a lost response returns the original row instead of duplicating it.
+
 Step 5 adds one visual launcher over those same tools:
 
 - `show_travel_dashboard`
@@ -103,10 +115,16 @@ Install reproducibly, check, and run:
 ```bash
 npm --prefix ui/travel-dashboard ci
 npm --prefix ui/travel-dashboard run build
+npm --prefix ui/travel-companion ci
+npm --prefix ui/travel-companion run build
 npm ci
 npm run check
 npm run dev
 ```
+
+Both UI builds are optional for the MCP surface itself: without the dashboard build the MCP App
+resource fails to load, and without the companion build the server logs `companion_app=absent` and
+serves no `/app` route. Everything else works.
 
 In another terminal:
 
@@ -131,16 +149,63 @@ curl -i -H 'Authorization: Bearer invalid' http://127.0.0.1:3000/mcp
 
 Both MCP requests must return `401`; health must remain `200`.
 
+## Offline companion PWA
+
+`ui/travel-companion` is an installable offline app served at `/app` on this same origin. It caches
+one trip through `get_offline_snapshot` and renders Now, Plan, Places, and a reference Card with no
+connection at all. Design and rationale are in `docs/companion-pwa.md`; the device-side exposure is
+in `docs/security.md`.
+
+Same origin is deliberate: no CORS, no extra `ALLOWED_ORIGINS` entry, a service-worker scope that
+covers the app and nothing else, and a fixed place for the OAuth redirect to land.
+
+Build it, then open `http://127.0.0.1:3000/app/`:
+
+```bash
+npm --prefix ui/travel-companion ci
+npm --prefix ui/travel-companion run build
+```
+
+### Operator step: register the companion as an OAuth client
+
+The companion is a first-class OAuth 2.1 client, not a signed-in web page — the `/mcp` verifier
+requires a token carrying `client_id` and the Supabase `/auth/v1` issuer, which a plain Supabase
+Auth session token does not have. In `supabase_oauth` mode, either:
+
+- **Dynamic registration.** Enable it in Supabase (README step 5 below). The app registers itself on
+  first sign-in and stores the result on the device. Review registered clients periodically.
+- **Pre-registration.** Register a client whose redirect URI is exactly
+  `https://travel-brain-mcp.fly.dev/app/callback`, with `token_endpoint_auth_method` `none` (it is a
+  public client and holds no secret), then build with its id:
+
+  ```bash
+  VITE_OAUTH_CLIENT_ID='your-registered-client-id' npm --prefix ui/travel-companion run build
+  ```
+
+Add the same `/app/callback` URL to Supabase → Authentication → URL Configuration → Redirect URLs.
+
+In `static` mode there is no OAuth server, so the companion cannot sign in; use it against a
+deployment running `supabase_oauth`.
+
+### On the phone
+
+Sign in once with a connection, then **Add to Home Screen**. That step is load-bearing rather than
+cosmetic: iOS evicts IndexedDB for a site left in a browser tab and unused for about a week, which
+would silently empty the offline cache. Installed, the trip stays put.
+
+**Sign out and erase from this device**, on the Card tab, clears the cached trip, the stored token,
+and every service-worker cache.
+
 ## Automated verification
 
 ```bash
 cd mcp-server
 npm run check
-cd ui/travel-dashboard
-npm run build
+npm --prefix ui/travel-dashboard run build
+npm --prefix ui/travel-companion run build
 ```
 
-This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 24 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, and the single-file dashboard build.
+This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 25 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, the single-file dashboard build, and the offline snapshot, replay idempotency, and companion shell.
 
 The repository also contains a real PostgreSQL fixture at `mcp-server/test/sql/step4-integration.sql`. Run it after applying migrations to an isolated Supabase Postgres database; it verifies PostGIS ordering plus proposal commit, stale rejection, atomicity, idempotency, viewer denial, planned-vs-actual preservation, and itinerary removal with its history guard.
 
@@ -306,7 +371,7 @@ curl --fail "${PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/mcp"
 curl -i "${PUBLIC_BASE_URL}/mcp"
 ```
 
-The last request must be `401` and its `WWW-Authenticate` header must advertise the protected-resource metadata URL. Complete the OAuth login in an MCP client/Inspector, list all 25 tools (24 data tools plus `show_travel_dashboard`), and run owner/editor/viewer/unrelated-user and write-persistence checks with real users.
+The last request must be `401` and its `WWW-Authenticate` header must advertise the protected-resource metadata URL. Complete the OAuth login in an MCP client/Inspector, list all 26 tools (25 data tools plus `show_travel_dashboard`), and run owner/editor/viewer/unrelated-user and write-persistence checks with real users.
 
 ## Automatic Fly.io deployment
 
@@ -336,6 +401,7 @@ For an approval gate, create or edit the GitHub `production` environment under *
 - Semantic memory and sourced research remain separate tables and tool paths.
 - Embeddings remain optional and no OpenAI dependency is present.
 - No continuous GPS history was introduced.
+- The companion PWA shell is public but holds no trip data; every byte of travel content still crosses the authenticated MCP boundary.
 
 See `docs/security.md` for the mode-by-mode threat model and operator checklist.
 

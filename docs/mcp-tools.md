@@ -103,6 +103,26 @@ Input: `{ trip_id, provenance?, level?, levels?, place_id?, category?, shareable
 
 Input: `{ trip_id, include_global_preferences?: true }`. Returns stored `{ lessons, preferences }` for the current actor. It preserves memory confidence/status/provenance and performs no synthesis.
 
+### `get_offline_snapshot`
+
+Input: `{ trip_id: uuid }`. Returns `{ trip, itinerary, reservations, places, visits, journal, research, recommendations, lessons, preferences, current_state, location, server_time, snapshot_etag }`.
+
+One trip, whole, in one round trip — the offline companion's entire read protocol. It is `get_trip` plus the three things a cached copy needs and that call cannot give:
+
+- **Coordinates.** `places.location` is a PostGIS geography and PostgREST serialises it as EWKB hex, so no client can read it. The `trip_offline_places` function decomposes the point into `latitude`/`longitude` on each `places` entry; the surrounding shape matches `get_trip`'s `places` exactly.
+- **Stored lessons and preferences**, split the same way `get_trip_lessons` splits them.
+- **`current_state`** plus the same `fresh`/`stale`/`missing` `location` qualification `get_current_context` returns.
+
+It returns rows, not derived day views, deliberately: a cached `get_today` is wrong once local midnight passes, so the client recomputes day grouping from these rows against the clock as it is now. `snapshot_etag` (row count plus the latest timestamp across every collection) lets a client skip rewriting its store when nothing changed; `server_time` lets it notice its own clock has drifted. Another member's `private` journal entries are excluded, exactly as in `get_trip`.
+
+### Idempotent replay: `client_op_id`
+
+`add_place`, `record_journal_note`, `mark_place_visited`, and `remember_preference` accept an optional `client_op_id`. It is stored in the row's `metadata` and made unique per writer by partial indexes (per trip and author for journal entries, per trip and place for visits, per creator otherwise).
+
+An offline client queues a write and replays it when the signal returns; if the reply was lost after the server committed, the replay would otherwise insert a second row. With a `client_op_id` the tool returns the row the first call created, so a replay is indistinguishable from the first call — including in the response, which carries no replay flag. Callers that omit it keep the single-insert path unchanged.
+
+A duplicate visit matters more than the others: a visit is the evidence a `firsthand` recommendation is checked against, so two of them overstate the record rather than merely cluttering it.
+
 ### `propose_itinerary_change`
 
 Input:

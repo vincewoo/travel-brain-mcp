@@ -47,6 +47,19 @@ Itinerary proposals add a second write boundary. Members may read proposal recor
 
 Profile bootstrap is request-scoped. Before the first tool operation in an authenticated HTTP request, the server upserts only the verified actor's `profiles` row. In OAuth mode the existing self-insert/self-update profile policy authorizes that operation; no service role is used.
 
+## Companion PWA
+
+The companion is served as static files at `/app` on the MCP origin and is deliberately public: it contains no trip data, no keys, and no service credential. It authenticates as its own OAuth 2.1 client through the same Supabase authorization server, either pre-registered (`VITE_OAUTH_CLIENT_ID`) or dynamically registered, with the exact redirect URI `<PUBLIC_BASE_URL>/app/callback`. The MCP transport remains the only authorization boundary; the browser holds a user token and nothing more.
+
+Two exposures are inherent to an offline app and are accepted deliberately rather than mitigated with theatre:
+
+- **A refresh token is persisted on the device**, in IndexedDB. Without it the app could not re-sync after the access token expires, which is most of the time on a trip.
+- **The whole trip, including the traveller's own private journal entries, is cached in plaintext on the phone.** Encrypting it would require a passphrase on every open, which defeats a reference you read while walking. Device lock is the control that actually applies.
+
+The compensating control is explicit and in the UI: **Sign out and erase from this device** clears IndexedDB, session storage, and every cache entry. Same-origin hosting keeps the cache and the token inside one origin's storage.
+
+The service worker caches only this app's own same-origin `GET` requests. It never caches `/mcp`: a replayed tool response would present a stale itinerary as live, which no cache header could make honest.
+
 ## Secret handling
 
 Never commit or bake these values into an image:

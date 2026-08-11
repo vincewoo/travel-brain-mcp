@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
+import { zonedInstant, zonedInstants } from './instants.mjs';
+
+/** Timestamps a caller may send as a trip-local wall clock rather than as an absolute instant. */
+const ITINERARY_INSTANTS = ['planned_start', 'planned_end', 'actual_start', 'actual_end'];
 
 export function createDbContext(config, authInfo, clientFactory = createClient) {
   if (!authInfo || typeof authInfo.token !== 'string') {
@@ -53,16 +57,21 @@ export async function ensureProfile(ctx) {
   fail(error, 'ensureProfile');
 }
 
+/**
+ * Access check for a trip. It also hands back the trip's timezone, because every writer that
+ * stores a timestamp needs the trip's clock to read naive values against, and this is the one
+ * lookup they all already make.
+ */
 export async function tripAccess(ctx, tripId, edit = false) {
   const { supabase, actorId } = ctx;
   const { data: trip, error: tripError } = await supabase
     .from('trips')
-    .select('id, owner_id')
+    .select('id, owner_id, timezone')
     .eq('id', tripId)
     .maybeSingle();
   fail(tripError, 'tripAccess trip');
   if (!trip) throw new Error('Trip not found.');
-  if (trip.owner_id === actorId) return { role: 'owner' };
+  if (trip.owner_id === actorId) return { role: 'owner', timezone: trip.timezone ?? 'UTC' };
 
   const { data: membership, error: memberError } = await supabase
     .from('trip_members')
@@ -75,19 +84,22 @@ export async function tripAccess(ctx, tripId, edit = false) {
   if (edit && !['owner', 'editor'].includes(membership.role)) {
     throw new Error('Trip access is read-only.');
   }
-  return membership;
+  return { ...membership, timezone: trip.timezone ?? 'UTC' };
 }
 
-async function itemTripId(ctx, itemId) {
+/** The trip an itinerary item belongs to, plus the item's own zone override when it has one. */
+async function itemClock(ctx, itemId) {
   const { supabase } = ctx;
   const { data, error } = await supabase
     .from('itinerary_items')
-    .select('trip_id')
+    .select('trip_id, timezone')
     .eq('id', itemId)
     .single();
   fail(error, 'itemTripId');
-  return data.trip_id;
+  return data;
 }
+
+const itemTripId = async (ctx, itemId) => (await itemClock(ctx, itemId)).trip_id;
 
 export async function listTrips(ctx) {
   const { supabase, actorId } = ctx;
@@ -188,7 +200,11 @@ export async function addPlace(ctx, input) {
 
 export async function addItineraryItem(ctx, input) {
   const { supabase } = ctx;
-  await tripAccess(ctx, input.trip_id, true);
+  const access = await tripAccess(ctx, input.trip_id, true);
+  // The item's own zone wins when it has one: a Guilin day inside a Hong Kong trip is planned
+  // on Guilin's clock.
+  const zone = input.timezone ?? access.timezone;
+  const timed = zonedInstants(input, ITINERARY_INSTANTS, zone);
   const { data, error } = await supabase
     .from('itinerary_items')
     .insert({
@@ -196,8 +212,8 @@ export async function addItineraryItem(ctx, input) {
       place_id: input.place_id ?? null,
       title: input.title,
       item_type: input.item_type ?? 'activity',
-      planned_start: input.planned_start ?? null,
-      planned_end: input.planned_end ?? null,
+      planned_start: timed.planned_start ?? null,
+      planned_end: timed.planned_end ?? null,
       timezone: input.timezone ?? null,
       flexibility: input.flexibility ?? 'flexible',
       priority: input.priority ?? 3,
@@ -213,10 +229,14 @@ export async function addItineraryItem(ctx, input) {
 
 export async function updateItineraryItem(ctx, input) {
   const { supabase } = ctx;
-  const tripId = await itemTripId(ctx, input.itinerary_item_id);
-  await tripAccess(ctx, tripId, true);
-  const allowed = ['planned_start', 'planned_end', 'actual_start', 'actual_end', 'flexibility', 'priority', 'status', 'notes'];
-  const patch = Object.fromEntries(Object.entries(input).filter(([key, value]) => allowed.includes(key) && value !== undefined));
+  const item = await itemClock(ctx, input.itinerary_item_id);
+  const access = await tripAccess(ctx, item.trip_id, true);
+  const allowed = [...ITINERARY_INSTANTS, 'flexibility', 'priority', 'status', 'notes'];
+  const patch = zonedInstants(
+    Object.fromEntries(Object.entries(input).filter(([key, value]) => allowed.includes(key) && value !== undefined)),
+    ITINERARY_INSTANTS,
+    item.timezone ?? access.timezone
+  );
   const { data, error } = await supabase
     .from('itinerary_items')
     .update(patch)
@@ -259,7 +279,10 @@ export async function removeItineraryItem(ctx, input) {
 
 export async function saveResearchFinding(ctx, input) {
   const { supabase, actorId } = ctx;
-  if (input.trip_id) await tripAccess(ctx, input.trip_id, true);
+  // Research can be trip-less, and then there is no traveller's clock to read a bare
+  // timestamp against; UTC is the only defensible reading left.
+  const zone = input.trip_id ? (await tripAccess(ctx, input.trip_id, true)).timezone : 'UTC';
+  const dated = zonedInstants(input, ['valid_as_of', 'expires_at'], zone);
   const { data: item, error } = await supabase.from('research_items').insert({
     owner_id: actorId,
     trip_id: input.trip_id ?? null,
@@ -270,8 +293,8 @@ export async function saveResearchFinding(ctx, input) {
     volatility: input.volatility ?? 'semi_volatile',
     confidence: input.confidence ?? 0.8,
     status: 'active',
-    valid_as_of: input.valid_as_of ?? new Date().toISOString(),
-    expires_at: input.expires_at ?? null,
+    valid_as_of: dated.valid_as_of ?? new Date().toISOString(),
+    expires_at: dated.expires_at ?? null,
     metadata: input.metadata ?? {}
   }).select('*').single();
   fail(error, 'saveResearchFinding');
@@ -283,7 +306,7 @@ export async function saveResearchFinding(ctx, input) {
       source_title: s.source_title ?? null,
       publisher: s.publisher ?? null,
       source_kind: s.source_kind ?? 'web',
-      retrieved_at: s.retrieved_at ?? new Date().toISOString(),
+      retrieved_at: zonedInstant(s.retrieved_at, zone) ?? new Date().toISOString(),
       note: s.note ?? null
     }));
     const { error: sourceError } = await supabase.from('research_sources').insert(rows);
@@ -294,13 +317,13 @@ export async function saveResearchFinding(ctx, input) {
 
 export async function recordJournalNote(ctx, input) {
   const { supabase, actorId } = ctx;
-  await tripAccess(ctx, input.trip_id, true);
+  const access = await tripAccess(ctx, input.trip_id, true);
   const record = {
     trip_id: input.trip_id,
     author_id: actorId,
     itinerary_item_id: input.itinerary_item_id ?? null,
     place_id: input.place_id ?? null,
-    captured_at: input.captured_at ?? new Date().toISOString(),
+    captured_at: zonedInstant(input.captured_at, access.timezone) ?? new Date().toISOString(),
     raw_note: input.raw_note,
     reaction: input.reaction ?? null,
     visibility: input.visibility ?? 'private',
@@ -316,19 +339,22 @@ export async function recordJournalNote(ctx, input) {
 
 export async function markPlaceVisited(ctx, input) {
   const { supabase } = ctx;
-  await tripAccess(ctx, input.trip_id, true);
+  const access = await tripAccess(ctx, input.trip_id, true);
+  let zone = access.timezone;
   if (input.itinerary_item_id) {
-    const itineraryTripId = await itemTripId(ctx, input.itinerary_item_id);
-    if (itineraryTripId !== input.trip_id) {
+    const item = await itemClock(ctx, input.itinerary_item_id);
+    if (item.trip_id !== input.trip_id) {
       throw new Error('The itinerary item does not belong to this trip.');
     }
+    zone = item.timezone ?? zone;
   }
+  const visited = zonedInstants(input, ['arrived_at', 'departed_at'], zone);
   const { data: visit, error } = await supabase.from('place_visits').insert({
     trip_id: input.trip_id,
     place_id: input.place_id,
     itinerary_item_id: input.itinerary_item_id ?? null,
-    arrived_at: input.arrived_at ?? null,
-    departed_at: input.departed_at ?? null,
+    arrived_at: visited.arrived_at ?? null,
+    departed_at: visited.departed_at ?? null,
     rating: input.rating ?? null,
     would_return: input.would_return ?? null,
     recommendation: input.recommendation ?? 'none',
@@ -345,8 +371,8 @@ export async function markPlaceVisited(ctx, input) {
 
   if (input.itinerary_item_id) {
     const patch = { status: 'completed' };
-    if (input.arrived_at) patch.actual_start = input.arrived_at;
-    if (input.departed_at) patch.actual_end = input.departed_at;
+    if (visited.arrived_at) patch.actual_start = visited.arrived_at;
+    if (visited.departed_at) patch.actual_end = visited.departed_at;
     const { error: itemError } = await supabase.from('itinerary_items').update(patch).eq('id', input.itinerary_item_id);
     fail(itemError, 'markPlaceVisited itinerary');
   }
@@ -568,7 +594,7 @@ async function loadTrip(ctx, tripId, edit = false) {
 
 export async function getToday(ctx, tripId, requestedDate = null, atTime = new Date()) {
   const trip = await loadTrip(ctx, tripId);
-  const instant = validInstant(atTime, 'at_time');
+  const instant = validInstant(zonedInstant(atTime, trip.timezone), 'at_time');
   const localNow = localDateTime(instant, trip.timezone);
   const date = requestedDate ?? localNow.date;
   const results = await Promise.all([
@@ -599,7 +625,7 @@ export async function getToday(ctx, tripId, requestedDate = null, atTime = new D
 
 export async function getCurrentContext(ctx, tripId, atTime = new Date()) {
   const trip = await loadTrip(ctx, tripId);
-  const instant = validInstant(atTime, 'at_time');
+  const instant = validInstant(zonedInstant(atTime, trip.timezone), 'at_time');
   const local = localDateTime(instant, trip.timezone);
   const results = await Promise.all([
     ctx.supabase.from('current_trip_state').select('*').eq('trip_id', tripId).maybeSingle(),
@@ -645,7 +671,7 @@ export async function updateCurrentTripState(ctx, input) {
   if (input.location_observed_at !== undefined && !hasLatitude) {
     throw new Error('location_observed_at requires latitude and longitude.');
   }
-  await tripAccess(ctx, input.trip_id, true);
+  const access = await tripAccess(ctx, input.trip_id, true);
   if (input.current_itinerary_item_id) {
     const linkedTripId = await itemTripId(ctx, input.current_itinerary_item_id);
     if (linkedTripId !== input.trip_id) throw new Error('The itinerary item does not belong to this trip.');
@@ -659,7 +685,7 @@ export async function updateCurrentTripState(ctx, input) {
   if (input.state !== undefined) patch.state = input.state;
   if (hasLatitude) {
     patch.last_location = `POINT(${input.longitude} ${input.latitude})`;
-    patch.location_observed_at = input.location_observed_at ?? new Date().toISOString();
+    patch.location_observed_at = zonedInstant(input.location_observed_at, access.timezone) ?? new Date().toISOString();
   }
 
   if (existing) {
@@ -986,12 +1012,15 @@ export async function proposeItineraryChange(ctx, input) {
       for (const key of Object.keys(operation.patch)) {
         if (!PROPOSAL_UPDATE_FIELDS.has(key)) throw new Error(`operations[${index}].patch.${key} is not allowed.`);
       }
+      // Resolve the clock before validating and storing: the proposal is what commit replays,
+      // and the diff the traveller approves has to show the instants they will actually get.
+      const patch = zonedInstants(operation.patch, ['planned_start', 'planned_end'], item.timezone ?? trip.timezone);
       validatePlannedRange(
-        operation.patch.planned_start !== undefined ? operation.patch.planned_start : item.planned_start,
-        operation.patch.planned_end !== undefined ? operation.patch.planned_end : item.planned_end,
+        patch.planned_start !== undefined ? patch.planned_start : item.planned_start,
+        patch.planned_end !== undefined ? patch.planned_end : item.planned_end,
         `operations[${index}]`
       );
-      return { ...operation, expected_updated_at: item.updated_at };
+      return { ...operation, patch, expected_updated_at: item.updated_at };
     }
     if (operation.op === 'remove') {
       const item = itemById.get(operation.itinerary_item_id);
@@ -1002,7 +1031,7 @@ export async function proposeItineraryChange(ctx, input) {
       }
       return { ...operation, expected_updated_at: item.updated_at };
     }
-    const proposed = operation.item;
+    const proposed = zonedInstants(operation.item, ['planned_start', 'planned_end'], operation.item.timezone ?? trip.timezone);
     validatePlannedRange(proposed.planned_start ?? null, proposed.planned_end ?? null, `operations[${index}]`);
     if (proposed.place_id) referencedPlaceIds.add(proposed.place_id);
     return { ...operation, item: { ...proposed, id: randomUUID() } };

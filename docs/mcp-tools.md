@@ -1,5 +1,13 @@
 # MCP tool contract
 
+## Timestamps
+
+Every timestamp input is read on the traveller's clock. A value written without an offset
+(`2026-12-28T09:00`) is a wall-clock time and is resolved in the item's `timezone`, falling back to
+the trip's — so a 9am Li River cruise is stored as the instant a traveller in Guilin calls 9am. A
+value that carries an offset or `Z` already names an instant and is stored as given. Everything is
+persisted as `timestamptz` and rendered back in the trip's zone.
+
 ## Read tools
 
 ### `list_trips`

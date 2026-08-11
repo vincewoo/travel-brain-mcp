@@ -26,6 +26,13 @@ import {
   updateCurrentTripState
 } from './db.mjs';
 
+/**
+ * Timestamps are written on the traveller's clock. Saying so in the schema keeps the planning
+ * agent from reaching for UTC conversions it would have to get right by hand.
+ */
+const LOCAL_TIME_HINT =
+  'ISO 8601. Without an offset ("2026-12-28T09:00") it is read on the trip\'s local clock — write the wall-clock time the traveller experiences. Add an explicit offset or "Z" only to name an exact instant.';
+
 const textResult = (data, message = 'Done.') => ({
   structuredContent: data,
   content: [{ type: 'text', text: `${message}\n${JSON.stringify(data, null, 2)}` }]
@@ -114,9 +121,9 @@ export function registerTools(server, resolveRequestContext) {
       place_id: z.string().uuid().optional(),
       title: z.string().min(1),
       item_type: z.string().default('activity'),
-      planned_start: z.string().optional(),
-      planned_end: z.string().optional(),
-      timezone: z.string().optional(),
+      planned_start: z.string().optional().describe(LOCAL_TIME_HINT),
+      planned_end: z.string().optional().describe(LOCAL_TIME_HINT),
+      timezone: z.string().optional().describe('IANA zone this item happens in, when it differs from the trip zone (e.g. a Guilin day inside a Hong Kong trip).'),
       flexibility: z.enum(['fixed', 'semi_flexible', 'flexible']).default('flexible'),
       priority: z.number().int().min(1).max(5).default(3),
       status: z.enum(['planned', 'confirmed', 'in_progress', 'completed', 'skipped', 'cancelled']).default('planned'),
@@ -131,10 +138,10 @@ export function registerTools(server, resolveRequestContext) {
     description: 'Update planned or actual itinerary timing/status while preserving the planned-vs-actual distinction.',
     inputSchema: z.object({
       itinerary_item_id: z.string().uuid(),
-      planned_start: z.string().optional(),
-      planned_end: z.string().optional(),
-      actual_start: z.string().optional(),
-      actual_end: z.string().optional(),
+      planned_start: z.string().optional().describe(LOCAL_TIME_HINT),
+      planned_end: z.string().optional().describe(LOCAL_TIME_HINT),
+      actual_start: z.string().optional().describe(LOCAL_TIME_HINT),
+      actual_end: z.string().optional().describe(LOCAL_TIME_HINT),
       flexibility: z.enum(['fixed', 'semi_flexible', 'flexible']).optional(),
       priority: z.number().int().min(1).max(5).optional(),
       status: z.enum(['planned', 'confirmed', 'in_progress', 'completed', 'skipped', 'cancelled']).optional(),
@@ -168,14 +175,14 @@ export function registerTools(server, resolveRequestContext) {
       summary: z.string().optional(),
       volatility: z.enum(['static', 'semi_volatile', 'volatile']).default('semi_volatile'),
       confidence: z.number().min(0).max(1).default(0.8),
-      valid_as_of: z.string().optional(),
-      expires_at: z.string().optional(),
+      valid_as_of: z.string().optional().describe(LOCAL_TIME_HINT),
+      expires_at: z.string().optional().describe(LOCAL_TIME_HINT),
       sources: z.array(z.object({
         source_url: z.string().url(),
         source_title: z.string().optional(),
         publisher: z.string().optional(),
         source_kind: z.string().optional(),
-        retrieved_at: z.string().optional(),
+        retrieved_at: z.string().optional().describe(LOCAL_TIME_HINT),
         note: z.string().optional()
       })).default([]),
       metadata: z.record(z.string(), z.unknown()).optional()
@@ -190,7 +197,7 @@ export function registerTools(server, resolveRequestContext) {
       trip_id: z.string().uuid(),
       itinerary_item_id: z.string().uuid().optional(),
       place_id: z.string().uuid().optional(),
-      captured_at: z.string().optional(),
+      captured_at: z.string().optional().describe(LOCAL_TIME_HINT),
       raw_note: z.string().min(1),
       reaction: z.string().optional(),
       visibility: z.enum(['private', 'trip', 'shareable']).default('private'),
@@ -208,8 +215,8 @@ export function registerTools(server, resolveRequestContext) {
       trip_id: z.string().uuid(),
       place_id: z.string().uuid(),
       itinerary_item_id: z.string().uuid().optional(),
-      arrived_at: z.string().optional(),
-      departed_at: z.string().optional(),
+      arrived_at: z.string().optional().describe(LOCAL_TIME_HINT),
+      departed_at: z.string().optional().describe(LOCAL_TIME_HINT),
       rating: z.number().min(0).max(5).optional(),
       would_return: z.boolean().optional(),
       recommendation: z.enum(['none', 'mixed', 'recommend', 'strongly_recommend', 'avoid']).default('none'),
@@ -280,7 +287,7 @@ export function registerTools(server, resolveRequestContext) {
     description: 'Read compact live concierge context, explicitly qualifying the latest location as fresh, stale, or missing.',
     inputSchema: z.object({
       trip_id: z.string().uuid(),
-      at_time: z.string().optional()
+      at_time: z.string().optional().describe(LOCAL_TIME_HINT)
     }),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
   }, tool('get_current_context', async ({ trip_id, at_time }, ctx) => textResult(
@@ -296,7 +303,7 @@ export function registerTools(server, resolveRequestContext) {
       current_itinerary_item_id: z.string().uuid().nullable().optional(),
       latitude: z.number().min(-90).max(90).optional(),
       longitude: z.number().min(-180).max(180).optional(),
-      location_observed_at: z.string().optional(),
+      location_observed_at: z.string().optional().describe(LOCAL_TIME_HINT),
       running_late_minutes: z.number().int().min(0).max(1440).optional(),
       state: z.record(z.string(), z.unknown()).optional()
     }).refine((input) => (input.latitude === undefined) === (input.longitude === undefined), {
@@ -416,8 +423,8 @@ export function registerTools(server, resolveRequestContext) {
     op: z.literal('update'),
     itinerary_item_id: z.string().uuid(),
     patch: z.object({
-      planned_start: z.string().optional(),
-      planned_end: z.string().optional(),
+      planned_start: z.string().optional().describe(LOCAL_TIME_HINT),
+      planned_end: z.string().optional().describe(LOCAL_TIME_HINT),
       status: z.enum(['planned', 'confirmed', 'skipped', 'cancelled']).optional(),
       flexibility: z.enum(['fixed', 'semi_flexible', 'flexible']).optional(),
       priority: z.number().int().min(1).max(5).optional(),
@@ -434,9 +441,9 @@ export function registerTools(server, resolveRequestContext) {
       title: z.string().min(1),
       place_id: z.string().uuid().optional(),
       item_type: z.string().default('activity'),
-      planned_start: z.string().optional(),
-      planned_end: z.string().optional(),
-      timezone: z.string().optional(),
+      planned_start: z.string().optional().describe(LOCAL_TIME_HINT),
+      planned_end: z.string().optional().describe(LOCAL_TIME_HINT),
+      timezone: z.string().optional().describe('IANA zone this item happens in, when it differs from the trip zone.'),
       flexibility: z.enum(['fixed', 'semi_flexible', 'flexible']).default('flexible'),
       priority: z.number().int().min(1).max(5).default(3),
       status: z.enum(['planned', 'confirmed']).default('planned'),

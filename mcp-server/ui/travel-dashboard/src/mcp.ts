@@ -77,6 +77,11 @@ function normalizePlace(raw: any): SavedPlace {
   };
 }
 
+/** "You have no trips" is a different screen from "something broke", so it gets its own type. */
+export class NoTripError extends Error {
+  constructor() { super("No Travel Brain trip is available yet."); this.name = "NoTripError"; }
+}
+
 export interface LoadedTripShell { tripId: string; trip: TripSummary; raw: JsonRecord; }
 
 export async function loadTripShell(ctx: LauncherContext): Promise<LoadedTripShell> {
@@ -89,7 +94,7 @@ export async function loadTripShell(ctx: LauncherContext): Promise<LoadedTripShe
       trips.find((trip: any) => trip.status === "completed") ?? trips[0];
     tripId = preferred?.id;
   }
-  if (!tripId) throw new Error("No Travel Brain trip is available yet.");
+  if (!tripId) throw new NoTripError();
   const raw = await callTool<JsonRecord>(TOOL.trip, { trip_id: tripId });
   return { tripId, trip: tripSummary(raw?.trip ?? raw, tripId), raw };
 }

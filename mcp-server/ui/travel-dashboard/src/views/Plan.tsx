@@ -13,10 +13,11 @@ interface Props {
   onToggle: (place: SavedPlace) => void;
   onFitPlaces: () => void;
   onOpenDay: (date: string) => void;
+  onRemove: (item: TimelineItem) => void;
   ask: (key: string, label: string, instruction: string) => void;
 }
 
-export function PlanView({ plan, selected, busy, onToggle, onFitPlaces, onOpenDay, ask }: Props) {
+export function PlanView({ plan, selected, busy, onToggle, onFitPlaces, onOpenDay, onRemove, ask }: Props) {
   const zone = useZone();
   const waiting = plan.unscheduled_places.length;
   const recover = (date: string) => (alert: PlanningIssue) => ask(
@@ -68,6 +69,7 @@ export function PlanView({ plan, selected, busy, onToggle, onFitPlaces, onOpenDa
               phase="planning"
               busy={Boolean(busy)}
               onAdjust={(item: TimelineItem) => ask(`adjust-${item.id}`, "Asking Claude to adjust the item…", `Adjust “${item.title}” (${item.id}) on ${day.date}; prepare a proposal without committing it.`)}
+              onRemove={onRemove}
             />) : <div className="row"><p className="row-meta">Nothing scheduled on this date yet.</p></div>}
       </section>;
     }) : <NoteEmpty title="No trip days yet" detail="Set trip dates or add itinerary items to create day sections." />}

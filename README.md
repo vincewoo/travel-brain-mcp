@@ -40,6 +40,14 @@ Step 4 adds 11 concierge/read-model tools over the same canonical data:
 - `propose_itinerary_change`
 - `commit_itinerary_change`
 
+Replanning adds one more write tool over the same data:
+
+- `remove_itinerary_item`
+
+Cancelling an item is a record ("we had this booked and it did not happen"); while planning, a dropped idea is cruft. `remove_itinerary_item` deletes a plan row outright, and `propose_itinerary_change` accepts the same removal as a reviewable `remove` operation. Both refuse any item with recorded history — in progress, completed, actual timings, or referenced by a journal entry, visit, reservation, media asset, or the live current-item pointer — which must be marked `skipped` or `cancelled` instead.
+
+The `202608110002_itinerary_removal.sql` migration also performs a one-time cleanup, deleting the `cancelled` and `skipped` rows already in the database under that same guard. Every one of them was written before removal existed, so they are the cruft this feature prevents; rows with any recorded history are left untouched. The migration reports how many it removed as a `NOTICE`.
+
 Step 5 adds one visual launcher over those same tools:
 
 - `show_travel_dashboard`
@@ -132,9 +140,9 @@ cd ui/travel-dashboard
 npm run build
 ```
 
-This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 23 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, and the single-file dashboard build.
+This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 24 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, and the single-file dashboard build.
 
-The repository also contains a real PostgreSQL fixture at `mcp-server/test/sql/step4-integration.sql`. Run it after applying migrations to an isolated Supabase Postgres database; it verifies PostGIS ordering plus proposal commit, stale rejection, atomicity, idempotency, viewer denial, and planned-vs-actual preservation.
+The repository also contains a real PostgreSQL fixture at `mcp-server/test/sql/step4-integration.sql`. Run it after applying migrations to an isolated Supabase Postgres database; it verifies PostGIS ordering plus proposal commit, stale rejection, atomicity, idempotency, viewer denial, planned-vs-actual preservation, and itinerary removal with its history guard.
 
 The HTTP integration test opens a loopback port and is opt-in for restricted CI/sandbox environments:
 
@@ -298,7 +306,7 @@ curl --fail "${PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/mcp"
 curl -i "${PUBLIC_BASE_URL}/mcp"
 ```
 
-The last request must be `401` and its `WWW-Authenticate` header must advertise the protected-resource metadata URL. Complete the OAuth login in an MCP client/Inspector, list all 24 tools (23 data tools plus `show_travel_dashboard`), and run owner/editor/viewer/unrelated-user and write-persistence checks with real users.
+The last request must be `401` and its `WWW-Authenticate` header must advertise the protected-resource metadata URL. Complete the OAuth login in an MCP client/Inspector, list all 25 tools (24 data tools plus `show_travel_dashboard`), and run owner/editor/viewer/unrelated-user and write-persistence checks with real users.
 
 ## Automatic Fly.io deployment
 

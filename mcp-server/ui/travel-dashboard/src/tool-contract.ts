@@ -13,6 +13,7 @@ export const TOOL = {
   addPlace: "add_place",
   addItineraryItem: "add_itinerary_item",
   updateItineraryItem: "update_itinerary_item",
+  removeItineraryItem: "remove_itinerary_item",
   updateCurrentTripState: "update_current_trip_state",
   recordJournalNote: "record_journal_note",
   markPlaceVisited: "mark_place_visited",
@@ -36,4 +37,5 @@ export interface UpdateItineraryItemInput {
   status?: "planned" | "confirmed" | "in_progress" | "completed" | "skipped" | "cancelled";
   notes?: string;
 }
+export interface RemoveItineraryItemInput { itinerary_item_id: string; }
 export interface CommitItineraryChangeInput { proposal_id: string; }

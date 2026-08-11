@@ -19,6 +19,7 @@ import {
   recordJournalNote,
   rememberPreference,
   proposeItineraryChange,
+  removeItineraryItem,
   saveResearchFinding,
   searchTravelBrain,
   updateItineraryItem,
@@ -141,6 +142,20 @@ export function registerTools(server, resolveRequestContext) {
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
   }, tool('update_itinerary_item', async (input, ctx) => textResult({ itinerary_item: await updateItineraryItem(ctx, input) }, 'Itinerary item updated.')));
+
+  server.registerTool('remove_itinerary_item', {
+    title: 'Remove itinerary item',
+    description: 'Delete a planned itinerary item outright while replanning. Only items with no recorded history can be removed; anything in progress, completed, timed, journaled, visited, reserved, or currently live must be marked skipped or cancelled instead.',
+    inputSchema: z.object({
+      itinerary_item_id: z.string().uuid()
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
+  }, tool('remove_itinerary_item', async (input, ctx) => {
+    const result = await removeItineraryItem(ctx, input);
+    return textResult(result, result?.error_code === 'ITEM_HAS_HISTORY'
+      ? 'Itinerary item kept; it has recorded history, so cancel or skip it instead.'
+      : 'Itinerary item removed.');
+  }));
 
   server.registerTool('save_research_finding', {
     title: 'Save research finding',
@@ -409,6 +424,10 @@ export function registerTools(server, resolveRequestContext) {
       notes: z.string().nullable().optional()
     }).refine((patch) => Object.keys(patch).length > 0, { message: 'Update patch must not be empty.' })
   });
+  const proposalRemove = z.object({
+    op: z.literal('remove'),
+    itinerary_item_id: z.string().uuid()
+  });
   const proposalAdd = z.object({
     op: z.literal('add'),
     item: z.object({
@@ -428,13 +447,13 @@ export function registerTools(server, resolveRequestContext) {
 
   server.registerTool('propose_itinerary_change', {
     title: 'Propose itinerary change',
-    description: 'Store a reviewable itinerary diff without changing authoritative itinerary rows.',
+    description: 'Store a reviewable itinerary diff without changing authoritative itinerary rows. Operations can move, add, and remove items; removals are rejected for items with recorded history.',
     inputSchema: z.object({
       trip_id: z.string().uuid(),
       summary: z.string().min(1),
       rationale: z.string().optional(),
       expires_in_minutes: z.number().int().min(1).max(1440).default(60),
-      operations: z.array(z.discriminatedUnion('op', [proposalUpdate, proposalAdd])).min(1).max(50)
+      operations: z.array(z.discriminatedUnion('op', [proposalUpdate, proposalRemove, proposalAdd])).min(1).max(50)
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
   }, tool('propose_itinerary_change', async (input, ctx) => textResult(
@@ -444,7 +463,7 @@ export function registerTools(server, resolveRequestContext) {
 
   server.registerTool('commit_itinerary_change', {
     title: 'Commit itinerary change',
-    description: 'Atomically commit an approved pending proposal. This can move or cancel authoritative itinerary items.',
+    description: 'Atomically commit an approved pending proposal. This can move, cancel, or delete authoritative itinerary items.',
     inputSchema: z.object({ proposal_id: z.string().uuid() }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
   }, tool('commit_itinerary_change', async ({ proposal_id }, ctx) => textResult(

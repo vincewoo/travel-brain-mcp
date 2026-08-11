@@ -240,4 +240,154 @@ begin
   end if;
 end $$;
 
+-- Itinerary removal: planning cruft is deletable, lived rows are not.
+insert into public.itinerary_items (id, trip_id, title, planned_start, planned_end, status) values
+  ('16161616-1616-4161-8161-161616161616', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Dropped idea', '2026-10-14T08:00:00Z', '2026-10-14T09:00:00Z', 'cancelled'),
+  ('17171717-1717-4171-8171-171717171717', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Journaled stop', '2026-10-14T10:00:00Z', '2026-10-14T11:00:00Z', 'planned');
+
+insert into public.journal_entries (trip_id, author_id, itinerary_item_id, raw_note) values (
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  '11111111-1111-4111-8111-111111111111',
+  '17171717-1717-4171-8171-171717171717',
+  'Rain, but the coffee was worth it.'
+);
+
+do $$
+declare result jsonb;
+begin
+  -- Actual timings make an item a record of what happened.
+  result := public.delete_itinerary_item(
+    'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    '11111111-1111-4111-8111-111111111111'
+  );
+  if result->>'error_code' <> 'ITEM_HAS_HISTORY' or not (result->'reasons' ? 'actual_times') then
+    raise exception 'Deleting an item with actual timings was not refused: %', result;
+  end if;
+
+  -- So does a journal entry pointing at it, whose FK would otherwise be nulled out.
+  result := public.delete_itinerary_item(
+    '17171717-1717-4171-8171-171717171717',
+    '11111111-1111-4111-8111-111111111111'
+  );
+  if result->>'error_code' <> 'ITEM_HAS_HISTORY' or not (result->'reasons' ? 'journal_entries') then
+    raise exception 'Deleting a journaled item was not refused: %', result;
+  end if;
+  if (select count(*) from public.itinerary_items where id in (
+    'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '17171717-1717-4171-8171-171717171717'
+  )) <> 2 then
+    raise exception 'A refused delete still removed rows.';
+  end if;
+
+  -- A viewer cannot delete at all.
+  begin
+    perform public.delete_itinerary_item(
+      '16161616-1616-4161-8161-161616161616',
+      '33333333-3333-4333-8333-333333333333'
+    );
+    raise exception 'Viewer delete unexpectedly succeeded.';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  -- An editor can delete planning cruft outright, and the delete is replay-safe.
+  result := public.delete_itinerary_item(
+    '16161616-1616-4161-8161-161616161616',
+    '22222222-2222-4222-8222-222222222222'
+  );
+  if result->>'status' <> 'deleted' or (result->>'idempotent_replay')::boolean then
+    raise exception 'Editor delete did not report a fresh deletion: %', result;
+  end if;
+  if exists (select 1 from public.itinerary_items where id = '16161616-1616-4161-8161-161616161616') then
+    raise exception 'Deleted itinerary item is still present.';
+  end if;
+
+  result := public.delete_itinerary_item(
+    '16161616-1616-4161-8161-161616161616',
+    '22222222-2222-4222-8222-222222222222'
+  );
+  if result->>'status' <> 'deleted' or not (result->>'idempotent_replay')::boolean then
+    raise exception 'Repeated delete was not reported as an idempotent replay: %', result;
+  end if;
+end $$;
+
+-- The same removal through a reviewable proposal, atomically with an update.
+insert into public.itinerary_change_proposals (
+  id, trip_id, created_by, summary, operations, validation
+)
+select
+  '18181818-1818-4181-8181-181818181818',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  '11111111-1111-4111-8111-111111111111',
+  'Drop the museum',
+  jsonb_build_array(
+    jsonb_build_object(
+      'op', 'remove',
+      'itinerary_item_id', '12121212-1212-4121-8121-121212121212',
+      'expected_updated_at', i.updated_at
+    )
+  ),
+  '{}'::jsonb
+from public.itinerary_items i
+where i.id = '12121212-1212-4121-8121-121212121212';
+
+-- A removal of a journaled item must be caught at commit time, not just at proposal time.
+insert into public.itinerary_change_proposals (
+  id, trip_id, created_by, summary, operations, validation
+)
+select
+  '19191919-1919-4191-8191-191919191919',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  '11111111-1111-4111-8111-111111111111',
+  'Drop the journaled stop',
+  jsonb_build_array(
+    jsonb_build_object(
+      'op', 'remove',
+      'itinerary_item_id', '17171717-1717-4171-8171-171717171717',
+      'expected_updated_at', i.updated_at
+    )
+  ),
+  '{}'::jsonb
+from public.itinerary_items i
+where i.id = '17171717-1717-4171-8171-171717171717';
+
+do $$
+declare result jsonb;
+begin
+  result := public.commit_itinerary_change_proposal(
+    '19191919-1919-4191-8191-191919191919',
+    '11111111-1111-4111-8111-111111111111'
+  );
+  if result->>'error_code' <> 'ITEM_HAS_HISTORY' then
+    raise exception 'Committing a removal of a journaled item was not refused: %', result;
+  end if;
+  if not exists (select 1 from public.itinerary_items where id = '17171717-1717-4171-8171-171717171717') then
+    raise exception 'A refused proposal removed the journaled item anyway.';
+  end if;
+
+  result := public.commit_itinerary_change_proposal(
+    '18181818-1818-4181-8181-181818181818',
+    '11111111-1111-4111-8111-111111111111'
+  );
+  if result->>'status' <> 'committed' then
+    raise exception 'Removal proposal did not commit: %', result;
+  end if;
+  if jsonb_array_length(result->'removed_items') <> 1
+    or result->'removed_items'->0->>'title' <> 'Museum' then
+    raise exception 'Commit did not report the row it deleted: %', result;
+  end if;
+  if exists (select 1 from public.itinerary_items where id = '12121212-1212-4121-8121-121212121212') then
+    raise exception 'Committed removal left the itinerary item in place.';
+  end if;
+
+  result := public.commit_itinerary_change_proposal(
+    '18181818-1818-4181-8181-181818181818',
+    '11111111-1111-4111-8111-111111111111'
+  );
+  if not (result->>'idempotent_replay')::boolean
+    or jsonb_array_length(result->'removed_items') <> 0
+    or result->'removed_item_ids'->>0 <> '12121212-1212-4121-8121-121212121212' then
+    raise exception 'Replayed removal commit did not report the deleted ID: %', result;
+  end if;
+end $$;
+
 select 'step4 integration passed' as result;

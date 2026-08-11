@@ -227,6 +227,36 @@ export async function updateItineraryItem(ctx, input) {
   return data;
 }
 
+/**
+ * Fields that make an itinerary row evidence rather than intent. The RPC re-checks these
+ * plus every table that points at the item; this local copy only exists to reject the
+ * obvious cases early, with the same wording.
+ */
+function livedItemReasons(item) {
+  const reasons = [];
+  if (['in_progress', 'completed'].includes(item.status)) reasons.push('lived_status');
+  if (item.actual_start || item.actual_end) reasons.push('actual_times');
+  return reasons;
+}
+
+export async function removeItineraryItem(ctx, input) {
+  const { data: existing, error: lookupError } = await ctx.supabase
+    .from('itinerary_items')
+    .select('trip_id')
+    .eq('id', input.itinerary_item_id)
+    .maybeSingle();
+  fail(lookupError, 'removeItineraryItem lookup');
+  // Removing an item that is already gone is the end state the caller asked for.
+  if (!existing) return { status: 'deleted', itinerary_item: null, idempotent_replay: true };
+  await tripAccess(ctx, existing.trip_id, true);
+  const { data, error } = await ctx.supabase.rpc('delete_itinerary_item', {
+    p_itinerary_item_id: input.itinerary_item_id,
+    p_actor_id: ctx.actorId
+  });
+  fail(error, 'removeItineraryItem');
+  return data;
+}
+
 export async function saveResearchFinding(ctx, input) {
   const { supabase, actorId } = ctx;
   if (input.trip_id) await tripAccess(ctx, input.trip_id, true);
@@ -963,6 +993,15 @@ export async function proposeItineraryChange(ctx, input) {
       );
       return { ...operation, expected_updated_at: item.updated_at };
     }
+    if (operation.op === 'remove') {
+      const item = itemById.get(operation.itinerary_item_id);
+      if (!item) throw new Error(`operations[${index}] references an itinerary item outside this trip.`);
+      const reasons = livedItemReasons(item);
+      if (reasons.length) {
+        throw new Error(`operations[${index}] removes an itinerary item with recorded history (${reasons.join(', ')}); cancel or skip it instead.`);
+      }
+      return { ...operation, expected_updated_at: item.updated_at };
+    }
     const proposed = operation.item;
     validatePlannedRange(proposed.planned_start ?? null, proposed.planned_end ?? null, `operations[${index}]`);
     if (proposed.place_id) referencedPlaceIds.add(proposed.place_id);
@@ -984,6 +1023,16 @@ export async function proposeItineraryChange(ctx, input) {
       const before = projected[index];
       projected[index] = { ...before, ...operation.patch };
       diff.push({ op: 'update', itinerary_item_id: before.id, title: before.title, before: operation.patch && Object.fromEntries(Object.keys(operation.patch).map((key) => [key, before[key]])), after: operation.patch });
+    } else if (operation.op === 'remove') {
+      const index = projected.findIndex((item) => item.id === operation.itinerary_item_id);
+      const [before] = projected.splice(index, 1);
+      diff.push({
+        op: 'remove',
+        itinerary_item_id: before.id,
+        title: before.title,
+        before: { planned_start: before.planned_start, planned_end: before.planned_end, status: before.status },
+        after: null
+      });
     } else {
       projected.push({ trip_id: input.trip_id, status: 'planned', flexibility: 'flexible', priority: 3, ...operation.item });
       diff.push({ op: 'add', itinerary_item_id: operation.item.id, after: operation.item });

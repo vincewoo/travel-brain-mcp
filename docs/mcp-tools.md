@@ -32,6 +32,8 @@ Success returns `{ status: "deleted", itinerary_item, idempotent_replay }`; the 
 
 History means any of: status `in_progress`/`completed`, an `actual_start`/`actual_end`, or a journal entry, place visit, reservation, media asset, or `current_trip_state` pointer referencing the item. Those foreign keys are `on delete set null`, so deleting such a row would silently orphan real memories. The guard lives in the `delete_itinerary_item` PostgreSQL function, which also re-checks owner/editor access and locks the row.
 
+The migration that introduced this tool applied the same guard once to existing data, deleting `cancelled` and `skipped` rows that carried no history. They predate removal, so they are exactly the cruft the tool exists to prevent.
+
 ### `save_research_finding`
 Store an atomic research finding plus zero or more sources.
 

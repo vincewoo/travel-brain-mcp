@@ -38,6 +38,15 @@ test('the commit RPC removes only unversioned, history-free items and still repo
   assert.match(commit, /'removed_item_ids', to_jsonb\(v_removed_ids\)/);
 });
 
+test('the one-time cleanup sweeps only history-free cancelled and skipped rows', () => {
+  const cleanup = sql.slice(sql.indexOf('one-time cleanup of the cruft'));
+  assert.match(cleanup, /i\.status in \('cancelled', 'skipped'\)/);
+  assert.match(cleanup, /cardinality\(public\.itinerary_item_history_reasons\(i\.id\)\) = 0/);
+  assert.match(cleanup, /delete from public\.itinerary_items target using cruft where target\.id = cruft\.id/);
+  // Anything still planned or confirmed is a live plan, not cruft.
+  assert.doesNotMatch(cleanup, /'planned'|'confirmed'/);
+});
+
 test('the removal functions stay locked down to trip editors', () => {
   assert.match(sql, /revoke all on function public\.delete_itinerary_item\(uuid, uuid\) from public/);
   assert.match(sql, /grant execute on function public\.delete_itinerary_item\(uuid, uuid\) to authenticated, service_role/);

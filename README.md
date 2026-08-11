@@ -46,6 +46,8 @@ Replanning adds one more write tool over the same data:
 
 Cancelling an item is a record ("we had this booked and it did not happen"); while planning, a dropped idea is cruft. `remove_itinerary_item` deletes a plan row outright, and `propose_itinerary_change` accepts the same removal as a reviewable `remove` operation. Both refuse any item with recorded history — in progress, completed, actual timings, or referenced by a journal entry, visit, reservation, media asset, or the live current-item pointer — which must be marked `skipped` or `cancelled` instead.
 
+The `202608110002_itinerary_removal.sql` migration also performs a one-time cleanup, deleting the `cancelled` and `skipped` rows already in the database under that same guard. Every one of them was written before removal existed, so they are the cruft this feature prevents; rows with any recorded history are left untouched. The migration reports how many it removed as a `NOTICE`.
+
 Step 5 adds one visual launcher over those same tools:
 
 - `show_travel_dashboard`

@@ -10,6 +10,10 @@
 -- lived status, or another table pointing at it (journal, visit, reservation, media, or
 -- the live current-item pointer). Those FKs are `on delete set null`, so a delete would
 -- silently orphan real memories; the guard refuses instead.
+--
+-- The migration ends with a one-time sweep that applies that same guard to the cancelled
+-- and skipped rows already in the database, since every one of them was written by an
+-- agent that had no delete to reach for.
 
 create or replace function public.itinerary_item_history_reasons(p_itinerary_item_id uuid)
 returns text[]
@@ -459,3 +463,29 @@ $$;
 revoke all on function public.commit_itinerary_change_proposal(uuid, uuid) from public;
 grant execute on function public.commit_itinerary_change_proposal(uuid, uuid)
   to authenticated, service_role;
+
+-- One-time cleanup of the cruft this migration exists to prevent.
+--
+-- Every 'cancelled' and 'skipped' row that predates removal was written by an agent that
+-- had no way to delete, so the existing plans carry replaced ideas as greyed-out timeline
+-- entries. The same history guard used above decides what survives: anything with actual
+-- timings, a lived status, or a journal entry, visit, reservation, media asset, or
+-- current-item pointer stays exactly as it is. This runs once, at migration time; from
+-- here on the distinction is made when the item is dropped, not in bulk afterwards.
+do $$
+declare
+  v_removed integer;
+begin
+  with cruft as (
+    select i.id
+    from public.itinerary_items i
+    where i.status in ('cancelled', 'skipped')
+      and cardinality(public.itinerary_item_history_reasons(i.id)) = 0
+  )
+  delete from public.itinerary_items target
+  using cruft
+  where target.id = cruft.id;
+
+  get diagnostics v_removed = row_count;
+  raise notice 'Itinerary cleanup removed % history-free cancelled/skipped item(s).', v_removed;
+end $$;

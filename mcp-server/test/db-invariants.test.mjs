@@ -23,14 +23,14 @@ function context(actorId, steps) {
 }
 
 test('owner and editor can edit; viewer and unrelated user cannot', async () => {
-  const owner = context(ownerId, [{ table: 'trips', data: { id: tripId, owner_id: ownerId } }]);
-  assert.deepEqual(await tripAccess(owner.ctx, tripId, true), { role: 'owner' });
+  const owner = context(ownerId, [{ table: 'trips', data: { id: tripId, owner_id: ownerId, timezone: 'Asia/Hong_Kong' } }]);
+  assert.deepEqual(await tripAccess(owner.ctx, tripId, true), { role: 'owner', timezone: 'Asia/Hong_Kong' });
 
   const editor = context(editorId, [
-    { table: 'trips', data: { id: tripId, owner_id: ownerId } },
+    { table: 'trips', data: { id: tripId, owner_id: ownerId, timezone: 'Asia/Hong_Kong' } },
     { table: 'trip_members', data: { role: 'editor' } }
   ]);
-  assert.deepEqual(await tripAccess(editor.ctx, tripId, true), { role: 'editor' });
+  assert.deepEqual(await tripAccess(editor.ctx, tripId, true), { role: 'editor', timezone: 'Asia/Hong_Kong' });
 
   const viewer = context(viewerId, [
     { table: 'trips', data: { id: tripId, owner_id: ownerId } },

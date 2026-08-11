@@ -390,4 +390,106 @@ begin
   end if;
 end $$;
 
+-- Offline companion: coordinates and idempotent replay (202608110003_offline_snapshot.sql).
+
+do $$
+declare peak record;
+begin
+  select * into peak
+  from public.trip_offline_places('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+  where place_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+  if peak is null then
+    raise exception 'trip_offline_places did not return a saved trip place.';
+  end if;
+  -- The point was stored as (longitude 139, latitude 35); PostgREST cannot express it at all, so
+  -- the whole reason this function exists is that these two columns come back as plain numbers.
+  if round(peak.longitude::numeric, 4) <> 139.0000 or round(peak.latitude::numeric, 4) <> 35.0000 then
+    raise exception 'trip_offline_places returned the wrong coordinates: % %', peak.latitude, peak.longitude;
+  end if;
+  if peak.place_name <> 'Origin cafe' or peak.trip_id <> 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' then
+    raise exception 'trip_offline_places did not join the place row: %', peak;
+  end if;
+
+  if exists (
+    select 1 from public.trip_offline_places('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    where place_id not in (
+      select place_id from public.trip_places
+      where trip_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    )
+  ) then
+    raise exception 'trip_offline_places returned a place outside the trip.';
+  end if;
+end $$;
+
+do $$
+declare duplicated boolean := false;
+begin
+  insert into public.journal_entries (trip_id, author_id, raw_note, metadata) values (
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    '11111111-1111-4111-8111-111111111111',
+    'Queued in a tunnel',
+    '{"client_op_id": "op-replay-1"}'::jsonb
+  );
+
+  -- The replay a flaky connection produces. The index is what makes it fail here rather than
+  -- silently leaving the traveller with the same note written twice.
+  begin
+    insert into public.journal_entries (trip_id, author_id, raw_note, metadata) values (
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      '11111111-1111-4111-8111-111111111111',
+      'Queued in a tunnel',
+      '{"client_op_id": "op-replay-1"}'::jsonb
+    );
+    duplicated := true;
+  exception when unique_violation then
+    null;
+  end;
+
+  if duplicated then
+    raise exception 'A replayed journal note was written twice.';
+  end if;
+
+  -- A different author reusing the same client id is a different operation, not a duplicate.
+  insert into public.journal_entries (trip_id, author_id, raw_note, metadata) values (
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    '22222222-2222-4222-8222-222222222222',
+    'Same id, different traveller',
+    '{"client_op_id": "op-replay-1"}'::jsonb
+  );
+
+  -- Notes without a client id are never deduplicated: two identical observations are two memories.
+  insert into public.journal_entries (trip_id, author_id, raw_note) values
+    ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Same words'),
+    ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Same words');
+end $$;
+
+do $$
+declare duplicated boolean := false;
+begin
+  insert into public.place_visits (trip_id, place_id, rating, metadata) values (
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    4.5,
+    '{"client_op_id": "op-visit-1"}'::jsonb
+  );
+  begin
+    insert into public.place_visits (trip_id, place_id, rating, metadata) values (
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      4.5,
+      '{"client_op_id": "op-visit-1"}'::jsonb
+    );
+    duplicated := true;
+  exception when unique_violation then
+    null;
+  end;
+
+  if duplicated then
+    -- A visit is the evidence a firsthand recommendation is checked against, so a duplicate
+    -- overstates the record rather than merely cluttering it.
+    raise exception 'A replayed visit was recorded twice.';
+  end if;
+end $$;
+
 select 'step4 integration passed' as result;

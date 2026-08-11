@@ -41,6 +41,22 @@ networkTest('health is public and MCP requires the configured bearer token', asy
   const unconfiguredConsent = await fetch(`${baseUrl}/oauth/consent/config`);
   assert.equal(unconfiguredConsent.status, 503);
 
+  // The companion shell is public because it holds no trip data; the app still has to authenticate
+  // over /mcp before it can read anything. Its client-side routes all resolve to the same shell so
+  // the OAuth redirect at /app/callback lands somewhere that can finish the exchange.
+  const companion = await fetch(`${baseUrl}/app/`);
+  assert.equal(companion.status, 200);
+  assert.match(await companion.text(), /Travel Brain Companion/);
+  const callback = await fetch(`${baseUrl}/app/callback?code=example`);
+  assert.equal(callback.status, 200);
+  assert.match(await callback.text(), /Travel Brain Companion/);
+  const worker = await fetch(`${baseUrl}/app/sw.js`);
+  assert.equal(worker.status, 200);
+  assert.equal(worker.headers.get('service-worker-allowed'), '/app/');
+  const manifest = await fetch(`${baseUrl}/app/manifest.webmanifest`);
+  assert.equal(manifest.status, 200);
+  assert.equal(JSON.parse(await manifest.text()).scope, '/app/');
+
   const missing = await fetch(`${baseUrl}/mcp`);
   assert.equal(missing.status, 401);
   const invalid = await fetch(`${baseUrl}/mcp`, { headers: { authorization: 'Bearer invalid-token' } });

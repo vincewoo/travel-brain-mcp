@@ -6,6 +6,7 @@ import {
   commitItineraryChange,
   getCurrentContext,
   getNearbySavedPlaces,
+  getOfflineSnapshot,
   getPlacesOverview,
   getPlanOverview,
   getRecentJournal,
@@ -32,6 +33,16 @@ import {
  */
 const LOCAL_TIME_HINT =
   'ISO 8601. Without an offset ("2026-12-28T09:00") it is read on the trip\'s local clock — write the wall-clock time the traveller experiences. Add an explicit offset or "Z" only to name an exact instant.';
+
+/**
+ * Offline clients queue writes and replay them when a connection returns, and a reply lost in
+ * transit means the same write arrives twice. A caller that supplies a stable id per queued
+ * operation gets the original row back on the second attempt instead of a duplicate.
+ */
+const CLIENT_OP_HINT =
+  'Optional caller-generated id for one logical write, stored in metadata. Replaying the same id returns the row the first call created instead of inserting a second one. Offline companion clients should always send it; an interactive agent does not need to.';
+
+const clientOpId = () => z.string().min(8).max(128).optional().describe(CLIENT_OP_HINT);
 
 const textResult = (data, message = 'Done.') => ({
   structuredContent: data,
@@ -108,7 +119,8 @@ export function registerTools(server, resolveRequestContext) {
       longitude: z.number().min(-180).max(180).optional(),
       trip_status: z.enum(['shortlist', 'planned', 'visited', 'rejected']).default('shortlist'),
       external_ids: z.record(z.string(), z.string()).optional(),
-      metadata: z.record(z.string(), z.unknown()).optional()
+      metadata: z.record(z.string(), z.unknown()).optional(),
+      client_op_id: clientOpId()
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
   }, tool('add_place', async (input, ctx) => textResult({ place: await addPlace(ctx, input) }, 'Place saved.')));
@@ -203,7 +215,8 @@ export function registerTools(server, resolveRequestContext) {
       visibility: z.enum(['private', 'trip', 'shareable']).default('private'),
       latitude: z.number().min(-90).max(90).optional(),
       longitude: z.number().min(-180).max(180).optional(),
-      metadata: z.record(z.string(), z.unknown()).optional()
+      metadata: z.record(z.string(), z.unknown()).optional(),
+      client_op_id: clientOpId()
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
   }, tool('record_journal_note', async (input, ctx) => textResult({ journal_entry: await recordJournalNote(ctx, input) }, 'Journal note recorded.')));
@@ -220,7 +233,9 @@ export function registerTools(server, resolveRequestContext) {
       rating: z.number().min(0).max(5).optional(),
       would_return: z.boolean().optional(),
       recommendation: z.enum(['none', 'mixed', 'recommend', 'strongly_recommend', 'avoid']).default('none'),
-      notes: z.string().optional()
+      notes: z.string().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+      client_op_id: clientOpId()
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
   }, tool('mark_place_visited', async (input, ctx) => textResult({ visit: await markPlaceVisited(ctx, input) }, 'Visit recorded.')));
@@ -235,7 +250,8 @@ export function registerTools(server, resolveRequestContext) {
       confidence: z.number().min(0).max(1).optional(),
       status: z.enum(['candidate', 'confirmed', 'rejected', 'superseded']).optional(),
       provenance: z.enum(['explicit', 'inferred', 'imported']).default('explicit'),
-      metadata: z.record(z.string(), z.unknown()).optional()
+      metadata: z.record(z.string(), z.unknown()).optional(),
+      client_op_id: clientOpId()
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
   }, tool('remember_preference', async (input, ctx) => textResult({ memory: await rememberPreference(ctx, input) }, 'Memory stored.')));
@@ -417,6 +433,17 @@ export function registerTools(server, resolveRequestContext) {
   }, tool('get_trip_lessons', async (input, ctx) => textResult(
     await getTripLessons(ctx, input),
     'Stored trip lessons loaded.'
+  )));
+
+  server.registerTool('get_offline_snapshot', {
+    title: 'Get offline snapshot',
+    description:
+      'Read one whole trip in a single call for offline caching: itinerary, reservations, places with coordinates, visits, journal, research, recommendations, stored lessons and preferences, and live state. Returns rows rather than derived day views so a cached copy stays correct as the clock moves.',
+    inputSchema: z.object({ trip_id: z.string().uuid() }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_offline_snapshot', async ({ trip_id }, ctx) => textResult(
+    await getOfflineSnapshot(ctx, trip_id),
+    'Offline snapshot loaded.'
   )));
 
   const proposalUpdate = z.object({

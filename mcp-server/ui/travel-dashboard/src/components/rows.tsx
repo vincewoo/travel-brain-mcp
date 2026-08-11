@@ -29,10 +29,13 @@ interface TimelineRowProps {
   onDone?: (item: TimelineItem) => void;
   onSkip?: (item: TimelineItem) => void;
   onAdjust?: (item: TimelineItem) => void;
+  onRemove?: (item: TimelineItem) => void;
 }
 
-export function TimelineRow({ item, phase, current, busy, onDone, onSkip, onAdjust }: TimelineRowProps) {
+export function TimelineRow({ item, phase, current, busy, onDone, onSkip, onAdjust, onRemove }: TimelineRowProps) {
   const zone = useZone();
+  // Removal deletes the row, so there is nothing to undo afterwards: the row asks first.
+  const [confirmRemove, setConfirmRemove] = React.useState(false);
   const done = item.status === "completed";
   const skipped = ["skipped", "cancelled"].includes(item.status ?? "");
   const inactive = done || skipped;
@@ -67,8 +70,15 @@ export function TimelineRow({ item, phase, current, busy, onDone, onSkip, onAdju
         {onDone ? <button type="button" className="link-button" disabled={busy} onClick={() => onDone(item)}>Mark done</button> : null}
         {onSkip && item.flexibility !== "fixed" ? <button type="button" className="link-button quiet" disabled={busy} onClick={() => onSkip(item)}>Skip</button> : null}
       </div> : null}
-      {!inactive && phase === "planning" && onAdjust ? <div className="row-actions">
-        <button type="button" className="link-button" disabled={busy} onClick={() => onAdjust(item)}>Adjust with Claude</button>
+      {/* While planning, a dropped item is cruft rather than a record, so it can go for good. */}
+      {phase === "planning" && (onAdjust || onRemove) ? <div className="row-actions">
+        {!inactive && onAdjust ? <button type="button" className="link-button" disabled={busy} onClick={() => onAdjust(item)}>Adjust with Claude</button> : null}
+        {onRemove ? (confirmRemove
+          ? <>
+              <button type="button" className="link-button danger" disabled={busy} onClick={() => { setConfirmRemove(false); onRemove(item); }}>Delete for good</button>
+              <button type="button" className="link-button quiet" disabled={busy} onClick={() => setConfirmRemove(false)}>Keep</button>
+            </>
+          : <button type="button" className="link-button quiet" disabled={busy} onClick={() => setConfirmRemove(true)}>Remove</button>) : null}
       </div> : null}
     </div>
   </article>;

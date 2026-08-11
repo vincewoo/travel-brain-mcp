@@ -9,6 +9,7 @@ const expectedTools = [
   'add_place',
   'add_itinerary_item',
   'update_itinerary_item',
+  'remove_itinerary_item',
   'save_research_finding',
   'record_journal_note',
   'mark_place_visited',
@@ -28,7 +29,7 @@ const expectedTools = [
   'commit_itinerary_change'
 ];
 
-test('the original 12 and all 11 Step 4 MCP tool names remain registered', () => {
+test('the original 12, all 11 Step 4, and the itinerary removal MCP tool names remain registered', () => {
   const names = [];
   const server = {
     registerTool(name) {

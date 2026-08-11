@@ -11,6 +11,7 @@ import {
   getToday,
   getTripLessons,
   proposeItineraryChange,
+  removeItineraryItem,
   updateCurrentTripState
 } from '../src/db.mjs';
 import { createScriptedSupabase } from './support/scripted-supabase.mjs';
@@ -313,4 +314,73 @@ test('commit delegates the approved proposal to one atomic RPC and viewer writes
     operations: [{ op: 'update', itinerary_item_id: itemId, patch: { status: 'cancelled' } }]
   }), /read-only/);
   assert.equal(viewer.supabase.calls.some((call) => call.table === 'itinerary_change_proposals'), false);
+});
+
+test('removing a planning-stage item delegates the guarded delete to one RPC', async () => {
+  const removed = { status: 'deleted', itinerary_item: { id: itemId, title: 'Dropped idea' }, idempotent_replay: false };
+  const scripted = context([
+    { table: 'itinerary_items', data: { trip_id: tripId } },
+    { table: 'trips', data: { id: tripId, owner_id: ownerId } },
+    { rpc: 'delete_itinerary_item', data: removed }
+  ]);
+  assert.deepEqual(await removeItineraryItem(scripted.ctx, { itinerary_item_id: itemId }), removed);
+  assert.deepEqual(scripted.supabase.calls[2].args, { p_itinerary_item_id: itemId, p_actor_id: ownerId });
+  scripted.supabase.assertComplete();
+});
+
+test('removing an item that is already gone reports the requested end state without an RPC', async () => {
+  const scripted = context([{ table: 'itinerary_items', data: null }]);
+  const result = await removeItineraryItem(scripted.ctx, { itinerary_item_id: itemId });
+  assert.deepEqual(result, { status: 'deleted', itinerary_item: null, idempotent_replay: true });
+  scripted.supabase.assertComplete();
+});
+
+test('a proposed removal versions the row, drops it from the projection, and writes nothing', async () => {
+  const existing = {
+    id: itemId,
+    trip_id: tripId,
+    title: 'Replaced museum',
+    planned_start: '2026-10-14T03:00:00Z',
+    planned_end: '2026-10-14T04:00:00Z',
+    status: 'planned',
+    flexibility: 'flexible',
+    updated_at: '2026-08-10T12:00:00.123456Z'
+  };
+  const scripted = context([
+    ...ownerAccessAndTrip(),
+    { table: 'itinerary_items', data: [existing] },
+    { table: 'itinerary_change_proposals', data: { id: proposalId, status: 'pending' } }
+  ]);
+  const { diff } = await proposeItineraryChange(scripted.ctx, {
+    trip_id: tripId,
+    summary: 'Drop the museum',
+    operations: [{ op: 'remove', itinerary_item_id: itemId }]
+  });
+  const insert = scripted.supabase.calls.find((call) => call.table === 'itinerary_change_proposals');
+  assert.equal(insert.value.operations[0].expected_updated_at, existing.updated_at);
+  assert.deepEqual(diff, [{
+    op: 'remove',
+    itinerary_item_id: itemId,
+    title: existing.title,
+    before: { planned_start: existing.planned_start, planned_end: existing.planned_end, status: existing.status },
+    after: null
+  }]);
+  assert.equal(scripted.supabase.calls.some((call) => call.table === 'itinerary_items' && call.operation !== 'select'), false);
+});
+
+test('a proposed removal of an item with recorded history is rejected before any proposal is stored', async () => {
+  const lived = {
+    id: itemId, trip_id: tripId, title: 'Ramen', status: 'completed',
+    actual_start: '2026-10-14T03:00:00Z', actual_end: '2026-10-14T04:00:00Z', updated_at: '2026-08-10T12:00:00Z'
+  };
+  const scripted = context([
+    ...ownerAccessAndTrip(),
+    { table: 'itinerary_items', data: [lived] }
+  ]);
+  await assert.rejects(() => proposeItineraryChange(scripted.ctx, {
+    trip_id: tripId,
+    summary: 'Drop the ramen stop',
+    operations: [{ op: 'remove', itinerary_item_id: itemId }]
+  }), /recorded history/);
+  assert.equal(scripted.supabase.calls.some((call) => call.table === 'itinerary_change_proposals'), false);
 });

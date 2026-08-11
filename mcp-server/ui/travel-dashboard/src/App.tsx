@@ -145,6 +145,17 @@ export default function TravelDashboard() {
       undo: { detail: `${item.title} restored.`, run: () => callTool(TOOL.updateItineraryItem, { itinerary_item_id: item.id, status: item.status ?? "planned" }) },
     },
   );
+  /** Planning removals delete the row; the server refuses anything with recorded history. */
+  const removeItem = (item: TimelineItem) => direct(
+    `remove-${item.id}`,
+    `Removing “${item.title}”…`,
+    async () => {
+      const result = await callTool<{ error_code?: string; message?: string }>(TOOL.removeItineraryItem, { itinerary_item_id: item.id });
+      if (result?.error_code) throw new Error(result.message ?? "Travel Brain kept this item.");
+      return result;
+    },
+    { detail: `${item.title} removed from the plan.` },
+  );
   const togglePlace = (place: SavedPlace) => setSelected((current) => current.includes(place.id) ? current.filter((id) => id !== place.id) : [...current, place.id]);
   const fitPlaces = () => {
     const chosen = plan?.unscheduled_places.filter((place) => selected.includes(place.id)) ?? [];
@@ -202,7 +213,7 @@ export default function TravelDashboard() {
         onStatus={updateStatus}
         ask={ask}
       />
-    : tab === "plan" && plan ? <PlanView plan={plan} selected={selected} busy={busy?.key ?? null} onToggle={togglePlace} onFitPlaces={fitPlaces} onOpenDay={openDay} ask={ask} />
+    : tab === "plan" && plan ? <PlanView plan={plan} selected={selected} busy={busy?.key ?? null} onToggle={togglePlace} onFitPlaces={fitPlaces} onOpenDay={openDay} onRemove={removeItem} ask={ask} />
     : tab === "places" && places ? <PlacesView
         places={places.places}
         query={query} city={city} status={placeFilter} group={group} openGroups={openGroups}

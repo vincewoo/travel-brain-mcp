@@ -25,6 +25,13 @@ Schedule an item with planned timing and flexibility.
 ### `update_itinerary_item`
 Update planned/actual timing, status, flexibility, priority, or notes. Does not erase the distinction between planned and actual.
 
+### `remove_itinerary_item`
+Input: `{ itinerary_item_id: uuid }`. Deletes a plan row outright, for replanning where a dropped idea is cruft rather than a record.
+
+Success returns `{ status: "deleted", itinerary_item, idempotent_replay }`; the deleted row is echoed back once, and a repeated call on an already-removed ID reports the same success with `idempotent_replay: true`. An item with recorded history returns `{ error_code: "ITEM_HAS_HISTORY", message, reasons[], itinerary_item }` and is left untouched — mark it `skipped` or `cancelled` instead, which is the honest record for something that was real and did not happen.
+
+History means any of: status `in_progress`/`completed`, an `actual_start`/`actual_end`, or a journal entry, place visit, reservation, media asset, or `current_trip_state` pointer referencing the item. Those foreign keys are `on delete set null`, so deleting such a row would silently orphan real memories. The guard lives in the `delete_itinerary_item` PostgreSQL function, which also re-checks owner/editor access and locks the row.
+
 ### `save_research_finding`
 Store an atomic research finding plus zero or more sources.
 
@@ -110,6 +117,10 @@ Input:
       }
     },
     {
+      "op": "remove",
+      "itinerary_item_id": "uuid"
+    },
+    {
       "op": "add",
       "item": {
         "title": "Coffee",
@@ -129,11 +140,11 @@ Input:
 }
 ```
 
-Returns `{ proposal, diff }`. The stored operations capture `expected_updated_at` for updates and a stable generated ID for adds. The tool never writes `itinerary_items`; actual timestamps and hard deletion are not supported.
+Returns `{ proposal, diff }`. The stored operations capture `expected_updated_at` for updates and removals and a stable generated ID for adds. The tool never writes `itinerary_items`; actual timestamps cannot be proposed. A `remove` operation is rejected at proposal time if the item already carries lived status or actual timings, and again at commit time against every history source.
 
 ### `commit_itinerary_change`
 
-Input: `{ proposal_id: uuid }`. Success returns `{ proposal_id, status: "committed", committed_at, changed_items, added_items, idempotent_replay }`. Stale input returns `{ error_code: "STALE_PROPOSAL", message, changed_item_ids }` with no operations applied. The PostgreSQL RPC is atomic, destructive in MCP annotations because it can move/cancel plans, and idempotent for repeated calls.
+Input: `{ proposal_id: uuid }`. Success returns `{ proposal_id, status: "committed", committed_at, changed_items, added_items, removed_items, removed_item_ids, idempotent_replay }`. `removed_items` holds the rows as they were just before deletion; a replay returns `[]` there, since those rows are gone, and reports `removed_item_ids` instead. Stale input returns `{ error_code: "STALE_PROPOSAL", message, changed_item_ids }` and a removal of an item with history returns `{ error_code: "ITEM_HAS_HISTORY", message, changed_item_ids }`, both with no operations applied. The PostgreSQL RPC is atomic, destructive in MCP annotations because it can move/cancel plans, and idempotent for repeated calls.
 
 ## Step 5 MCP App launcher
 

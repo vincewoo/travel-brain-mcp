@@ -179,7 +179,7 @@ export async function addPlace(ctx, input) {
     const { error: linkError } = await supabase.from('trip_places').upsert({
       trip_id: input.trip_id,
       place_id: place.id,
-      status: input.trip_status ?? 'saved'
+      status: input.trip_status ?? 'shortlist'
     }, { onConflict: 'trip_id,place_id' });
     fail(linkError, 'addPlace trip link');
   }
@@ -764,7 +764,7 @@ export async function getPlanOverview(ctx, tripId, atTime = new Date()) {
     }
   }
   const scheduledPlaceIds = new Set(activeScheduledItems(items).filter((item) => item.place_id).map((item) => item.place_id));
-  const unscheduledPlaces = tripPlaces.filter((link) => ['candidate', 'saved'].includes(link.status) && !scheduledPlaceIds.has(link.place_id));
+  const unscheduledPlaces = tripPlaces.filter((link) => link.status === 'shortlist' && !scheduledPlaceIds.has(link.place_id));
   for (const link of unscheduledPlaces.filter((place) => place.priority === 5)) {
     issues.push({
       id: stableIssueId('high_priority_unscheduled', [link.place_id]), type: 'high_priority_unscheduled', severity: 'warning',

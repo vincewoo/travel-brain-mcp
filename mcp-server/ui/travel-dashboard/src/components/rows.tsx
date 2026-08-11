@@ -15,7 +15,7 @@ function flexibility(item: TimelineItem) {
 
 export function placeStatus(place: SavedPlace): { label: string; dot: Tone; text: Tone | "" } {
   if (place.freshness === "stale") return { label: "Needs refresh", dot: "warning", text: "warning" };
-  const status = place.trip_status ?? "saved";
+  const status = place.trip_status ?? "shortlist";
   const dot: Tone = status === "planned" ? "info" : status === "visited" ? "ok" : status === "rejected" ? "danger" : "muted";
   return { label: humanize(status), dot, text: "" };
 }

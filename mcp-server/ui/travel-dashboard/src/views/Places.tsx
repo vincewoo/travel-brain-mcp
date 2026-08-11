@@ -4,7 +4,7 @@ import { BlankSlate } from "../components/states";
 import { humanize, joinMeta } from "../format";
 import type { SavedPlace } from "../types";
 
-export const PLACE_STATUSES = ["candidate", "saved", "planned", "visited", "rejected"] as const;
+export const PLACE_STATUSES = ["shortlist", "planned", "visited", "rejected"] as const;
 export type PlaceFilter = "all" | typeof PLACE_STATUSES[number];
 export type PlaceGrouping = "category" | "locality" | "status" | "none";
 
@@ -14,7 +14,6 @@ const GROUPINGS: { key: PlaceGrouping; label: string }[] = [
   { key: "status", label: "Status" },
   { key: "none", label: "Flat list" },
 ];
-const UNSCHEDULED_STATUSES: string[] = ["candidate", "saved"];
 const UNKNOWN_AREA = "Unknown area";
 const areaOf = (place: SavedPlace) => place.locality ?? place.region ?? UNKNOWN_AREA;
 
@@ -45,8 +44,8 @@ export function PlacesView({ places, query, city, status, group, openGroups, bus
     const searched = places.filter((place) => { const text = haystack(place); return terms.every((term) => text.includes(term)); });
     // Counts are scope-aware: a chip never offers a filter that would return nothing.
     const byStatusScope = searched.filter((place) => city === "all" || areaOf(place) === city);
-    const byCityScope = searched.filter((place) => status === "all" || (place.trip_status ?? "saved") === status);
-    const visible = byStatusScope.filter((place) => status === "all" || (place.trip_status ?? "saved") === status);
+    const byCityScope = searched.filter((place) => status === "all" || (place.trip_status ?? "shortlist") === status);
+    const visible = byStatusScope.filter((place) => status === "all" || (place.trip_status ?? "shortlist") === status);
 
     const areaCounts = new Map<string, number>();
     for (const place of byCityScope) areaCounts.set(areaOf(place), (areaCounts.get(areaOf(place)) ?? 0) + 1);
@@ -54,7 +53,7 @@ export function PlacesView({ places, query, city, status, group, openGroups, bus
 
     const groupKey = (place: SavedPlace) => group === "category" ? humanize(place.category ?? "Other")
       : group === "locality" ? areaOf(place)
-      : group === "status" ? humanize(place.trip_status ?? "saved")
+      : group === "status" ? humanize(place.trip_status ?? "shortlist")
       : "";
     const grouped = new Map<string, SavedPlace[]>();
     for (const place of visible) {
@@ -72,7 +71,7 @@ export function PlacesView({ places, query, city, status, group, openGroups, bus
         { key: "all" as PlaceFilter, label: "All", count: byStatusScope.length },
         ...PLACE_STATUSES.map((value) => ({
           key: value as PlaceFilter, label: humanize(value),
-          count: byStatusScope.filter((place) => (place.trip_status ?? "saved") === value).length,
+          count: byStatusScope.filter((place) => (place.trip_status ?? "shortlist") === value).length,
         })),
       ].filter((chip) => chip.count > 0 || chip.key === "all" || chip.key === status),
       areaOptions: [
@@ -83,8 +82,8 @@ export function PlacesView({ places, query, city, status, group, openGroups, bus
   }, [places, query, city, status, group]);
 
   const filtered = Boolean(query) || city !== "all" || status !== "all";
-  // The same definition db.mjs uses for the unscheduled tray: saved but not on the itinerary.
-  const unscheduled = places.filter((place) => !place.scheduled && UNSCHEDULED_STATUSES.includes(place.trip_status ?? "saved")).length;
+  // The same definition db.mjs uses for the unscheduled tray: shortlisted but not on the itinerary.
+  const unscheduled = places.filter((place) => !place.scheduled && (place.trip_status ?? "shortlist") === "shortlist").length;
 
   if (!places.length) return <div className="view">
     <BlankSlate

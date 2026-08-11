@@ -15,7 +15,7 @@ Shared access model: owner/editor/viewer.
 Canonical place identity: name, category, provider IDs, address, and PostGIS point.
 
 ### `trip_places`
-Relationship between a trip and a place: candidate, saved, planned, visited, rejected.
+Relationship between a trip and a place: shortlist, planned, visited, rejected. A place is shortlisted until it is scheduled, visited, or ruled out.
 
 ### `itinerary_items`
 Planned and actual timeline data. Has flexibility (`fixed`, `semi_flexible`, `flexible`) and status.

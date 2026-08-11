@@ -62,13 +62,17 @@ function tripSummary(raw: any, fallbackId: string): TripSummary {
   };
 }
 
+/** 'candidate' and 'saved' merged into 'shortlist'; map any pre-migration row onto it. */
+const tripStatus = (value?: string | null) =>
+  !value || value === "candidate" || value === "saved" ? "shortlist" : value;
+
 function normalizePlace(raw: any): SavedPlace {
   const place = raw?.place ?? raw?.places ?? raw ?? {};
   return {
     id: place.id ?? raw?.place_id, name: place.name ?? "Saved place",
     category: place.category ?? null, address: place.address ?? null,
     locality: place.locality ?? null, region: place.region ?? null, country_code: place.country_code ?? null,
-    trip_status: raw?.trip_status ?? raw?.status ?? "saved", priority: raw?.priority ?? null,
+    trip_status: tripStatus(raw?.trip_status ?? raw?.status), priority: raw?.priority ?? null,
     note: raw?.note ?? null, researched: Boolean(raw?.researched), research_count: raw?.research_count ?? 0,
     scheduled: Boolean(raw?.scheduled), itinerary_item_ids: raw?.itinerary_item_ids ?? [],
     itinerary_dates: raw?.itinerary_dates ?? [], visited: Boolean(raw?.visited),
@@ -143,7 +147,7 @@ export async function loadRecommendations(shell: LoadedTripShell): Promise<Recom
   return { recommendations: recommendations.map((entry: any): RecommendationItem => ({
     recommendation: entry?.recommendation ?? {},
     place: normalizePlace({
-      place: entry?.place, trip_status: entry?.visit ? "visited" : "saved",
+      place: entry?.place, trip_status: entry?.visit ? "visited" : "shortlist",
       researched: Boolean(entry?.research?.length), research_count: entry?.research?.length ?? 0,
       visited: Boolean(entry?.visit), visit: entry?.visit, recommendation: entry?.recommendation,
     }),

@@ -127,7 +127,7 @@ test('current trip location is overwritten in its singleton row and identical st
 
 test('nearby saved places preserve PostGIS distance order for explicit and current-state origins', async () => {
   const nearbyRows = [
-    { place_id: placeId, name: 'Near', category: 'cafe', trip_status: 'saved', priority: 3, distance_meters: 125.4 },
+    { place_id: placeId, name: 'Near', category: 'cafe', trip_status: 'shortlist', priority: 3, distance_meters: 125.4 },
     { place_id: itemId, name: 'Farther', category: 'cafe', trip_status: 'planned', priority: 2, distance_meters: 900.2 }
   ];
   const contextSteps = [
@@ -173,7 +173,7 @@ test('plan overview reports overlaps, unscheduled priority places, and stale vol
     { id: itemId, title: 'Fixed tour', place_id: placeId, planned_start: '2026-10-14T01:00:00Z', planned_end: '2026-10-14T03:00:00Z', status: 'confirmed', flexibility: 'fixed' },
     { id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: 'Overlap', planned_start: '2026-10-14T02:00:00Z', planned_end: '2026-10-14T04:00:00Z', status: 'planned', flexibility: 'flexible' }
   ];
-  const saved = { trip_id: tripId, place_id: place2, status: 'saved', priority: 5, places: { id: place2, name: 'Must try', locality: 'Shibuya' } };
+  const saved = { trip_id: tripId, place_id: place2, status: 'shortlist', priority: 5, places: { id: place2, name: 'Must try', locality: 'Shibuya' } };
   const scripted = context([
     ...ownerAccessAndTrip(),
     { table: 'itinerary_items', data: items },
@@ -198,7 +198,7 @@ test('places overview independently preserves researched, scheduled, visited, an
     ...ownerAccessAndTrip(),
     { table: 'trip_places', data: [
       { trip_id: tripId, place_id: placeId, status: 'visited', priority: 4, places: { id: placeId, name: 'Visited', category: 'restaurant' } },
-      { trip_id: tripId, place_id: researchOnlyId, status: 'saved', priority: 3, places: { id: researchOnlyId, name: 'Research only', category: 'museum' } }
+      { trip_id: tripId, place_id: researchOnlyId, status: 'shortlist', priority: 3, places: { id: researchOnlyId, name: 'Research only', category: 'museum' } }
     ] },
     { table: 'itinerary_items', data: [{ id: itemId, place_id: placeId, status: 'completed', planned_start: '2026-10-14T03:00:00Z' }] },
     { table: 'place_visits', data: [{ id: 'visit', place_id: placeId, rating: 5, would_return: true, created_at: '2026-10-14T05:00:00Z' }] },

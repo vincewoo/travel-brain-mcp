@@ -62,19 +62,28 @@ function tripSummary(raw: any, fallbackId: string): TripSummary {
   };
 }
 
+/** 'candidate' and 'saved' merged into 'shortlist'; map any pre-migration row onto it. */
+const tripStatus = (value?: string | null) =>
+  !value || value === "candidate" || value === "saved" ? "shortlist" : value;
+
 function normalizePlace(raw: any): SavedPlace {
   const place = raw?.place ?? raw?.places ?? raw ?? {};
   return {
     id: place.id ?? raw?.place_id, name: place.name ?? "Saved place",
     category: place.category ?? null, address: place.address ?? null,
     locality: place.locality ?? null, region: place.region ?? null, country_code: place.country_code ?? null,
-    trip_status: raw?.trip_status ?? raw?.status ?? "saved", priority: raw?.priority ?? null,
+    trip_status: tripStatus(raw?.trip_status ?? raw?.status), priority: raw?.priority ?? null,
     note: raw?.note ?? null, researched: Boolean(raw?.researched), research_count: raw?.research_count ?? 0,
     scheduled: Boolean(raw?.scheduled), itinerary_item_ids: raw?.itinerary_item_ids ?? [],
     itinerary_dates: raw?.itinerary_dates ?? [], visited: Boolean(raw?.visited),
     freshness: raw?.research_freshness ?? raw?.freshness ?? null, visit: raw?.visit ?? null,
     recommendation: raw?.recommendation ?? null,
   };
+}
+
+/** "You have no trips" is a different screen from "something broke", so it gets its own type. */
+export class NoTripError extends Error {
+  constructor() { super("No Travel Brain trip is available yet."); this.name = "NoTripError"; }
 }
 
 export interface LoadedTripShell { tripId: string; trip: TripSummary; raw: JsonRecord; }
@@ -89,7 +98,7 @@ export async function loadTripShell(ctx: LauncherContext): Promise<LoadedTripShe
       trips.find((trip: any) => trip.status === "completed") ?? trips[0];
     tripId = preferred?.id;
   }
-  if (!tripId) throw new Error("No Travel Brain trip is available yet.");
+  if (!tripId) throw new NoTripError();
   const raw = await callTool<JsonRecord>(TOOL.trip, { trip_id: tripId });
   return { tripId, trip: tripSummary(raw?.trip ?? raw, tripId), raw };
 }
@@ -138,7 +147,7 @@ export async function loadRecommendations(shell: LoadedTripShell): Promise<Recom
   return { recommendations: recommendations.map((entry: any): RecommendationItem => ({
     recommendation: entry?.recommendation ?? {},
     place: normalizePlace({
-      place: entry?.place, trip_status: entry?.visit ? "visited" : "saved",
+      place: entry?.place, trip_status: entry?.visit ? "visited" : "shortlist",
       researched: Boolean(entry?.research?.length), research_count: entry?.research?.length ?? 0,
       visited: Boolean(entry?.visit), visit: entry?.visit, recommendation: entry?.recommendation,
     }),

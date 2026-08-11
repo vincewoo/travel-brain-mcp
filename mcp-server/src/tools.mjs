@@ -98,7 +98,7 @@ export function registerTools(server, resolveRequestContext) {
       country_code: z.string().max(3).optional(),
       latitude: z.number().min(-90).max(90).optional(),
       longitude: z.number().min(-180).max(180).optional(),
-      trip_status: z.enum(['candidate', 'saved', 'planned', 'visited', 'rejected']).default('saved'),
+      trip_status: z.enum(['shortlist', 'planned', 'visited', 'rejected']).default('shortlist'),
       external_ids: z.record(z.string(), z.string()).optional(),
       metadata: z.record(z.string(), z.unknown()).optional()
     }),
@@ -303,7 +303,7 @@ export function registerTools(server, resolveRequestContext) {
       use_current_location: z.boolean().default(false),
       radius_meters: z.number().positive().max(100000).default(1500),
       category: z.string().optional(),
-      statuses: z.array(z.enum(['candidate', 'saved', 'planned', 'visited', 'rejected'])).optional(),
+      statuses: z.array(z.enum(['shortlist', 'planned', 'visited', 'rejected'])).optional(),
       limit: z.number().int().min(1).max(25).default(10)
     }).superRefine((input, context) => {
       if ((input.latitude === undefined) !== (input.longitude === undefined)) {
@@ -337,7 +337,7 @@ export function registerTools(server, resolveRequestContext) {
     description: 'Read canonical trip-place state joined with research, schedule, visit, and recommendation evidence.',
     inputSchema: z.object({
       trip_id: z.string().uuid(),
-      statuses: z.array(z.enum(['candidate', 'saved', 'planned', 'visited', 'rejected'])).optional(),
+      statuses: z.array(z.enum(['shortlist', 'planned', 'visited', 'rejected'])).optional(),
       category: z.string().optional(),
       researched: z.boolean().optional(),
       scheduled: z.boolean().optional(),

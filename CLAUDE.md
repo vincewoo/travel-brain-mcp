@@ -1,0 +1,151 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+All server commands run from `mcp-server/`:
+
+```bash
+npm run check        # node --check on every src module + full test suite (the gate CI runs)
+npm test             # node --test test/*.test.mjs
+npm run dev          # node --env-file=.env src/server.mjs
+npm start            # production entry: src/bootstrap.mjs (cold-start listener, then the real app)
+```
+
+Single test file / single test:
+
+```bash
+node --test test/tools.test.mjs
+node --test --test-name-pattern 'firsthand' test/tools.test.mjs
+```
+
+The HTTP integration test binds a loopback port and is skipped unless opted in:
+
+```bash
+TRAVEL_BRAIN_NETWORK_TESTS=1 npm test
+```
+
+The dashboard is a separate npm project that must be built before the server tests that assert on
+its bundle, and before running the server (the MCP App resource reads the built HTML):
+
+```bash
+npm --prefix ui/travel-dashboard ci
+npm --prefix ui/travel-dashboard run build   # tsc --noEmit + vite → dist/mcp-app.html (single file)
+```
+
+Database migrations live in `supabase/migrations/` and are applied in filename order (`supabase db
+push`, or pasted into the Supabase SQL editor). They are append-only — add a new timestamped file
+rather than editing an applied one. `mcp-server/test/sql/step4-integration.sql` is a fixture to run
+against a real Postgres after migrating; it covers PostGIS ordering, proposal commit/staleness,
+atomicity, viewer denial, and the itinerary-removal history guard.
+
+## Architecture
+
+### The database is authoritative
+
+The LLM reasons over travel state; it does not own it. A chat transcript is never the canonical
+itinerary, visit history, or journal. Every tool is a narrow, goal-oriented operation over
+Supabase/Postgres, and product invariants are enforced in `db.mjs` and in SQL — not in prompts.
+
+### Request-scoped identity
+
+There is no module-global traveler. `server.mjs` builds a resolver that turns each authenticated
+HTTP request into a `{ actorId, supabase, authInfo }` context, memoized per MCP handler instance,
+and every tool callback receives it. Two modes (`config.mjs`, `auth.mjs`):
+
+- `static` — a high-entropy `MCP_BEARER_TOKEN` guards a service-role Supabase client acting as a
+  fixed `TRAVEL_BRAIN_USER_ID`. RLS is bypassed, so the application-level `tripAccess()` checks in
+  `db.mjs` are the only authorization boundary. Local/staging only.
+- `supabase_oauth` — Supabase Auth verifies each OAuth 2.1 access token (issuer, `authenticated`
+  role, `exp`, `sub`, `client_id`); the verified `sub` becomes the actor and a per-request client
+  carries that user JWT, so RLS applies too. The server is a resource server only; it never issues
+  tokens. `/oauth/consent` is the Supabase-required approval UI.
+
+Never introduce a shared mutable Supabase client, a module-level actor, or a service-role path
+reachable from an unauthenticated route.
+
+### Module layering
+
+- `tools.mjs` — MCP surface only: Zod input schemas, descriptions, and annotations
+  (`readOnlyHint`/`destructiveHint`/`idempotentHint`). It delegates immediately to `db.mjs` and
+  wraps results in `{ structuredContent, content: [text] }`. Every response is duplicated as
+  readable JSON text.
+- `db.mjs` — all data access, all authorization (`tripAccess`), all invariants, and the Step 4 read
+  models. This is where behavior lives.
+- `instants.mjs` — timestamp discipline (see below).
+- `dashboard-ui.mjs` — registers the `show_travel_dashboard` tool plus the `ui://travel-brain/
+  dashboard.html` MCP App resource, reading the built single-file HTML from `dashboard/` (Docker
+  image) or `ui/travel-dashboard/dist/` (repo).
+- `bootstrap.mjs` — binds the port immediately during cold start, serves `/health` as `starting`
+  and `503` elsewhere, then hands over to the loaded application.
+
+### Read models, not caches
+
+The Step 4 tools (`get_today`, `get_plan_overview`, `get_places_overview`, `get_current_context`,
+`get_recent_journal`, `get_recommendations`, `get_trip_lessons`, `get_nearby_saved_places`)
+aggregate the same normalized tables into task-shaped responses. There are no dashboard cache
+tables and no live provider calls. Day grouping always happens in the trip's timezone.
+
+### Timestamps are on the traveller's clock
+
+A value without an offset (`2026-12-28T09:00`) is a wall-clock time, resolved by `instants.mjs` in
+the item's `timezone` falling back to the trip's; a value with an offset or `Z` already names an
+instant and passes through untouched. Everything persists as `timestamptz` and renders back in the
+trip's zone. Writing a naive timestamp straight to Postgres records it against the session zone
+(UTC) and silently moves a 9am Guilin cruise to 5pm — route new timestamp inputs through
+`zonedInstant`/`zonedInstants` and describe them with `LOCAL_TIME_HINT`.
+
+### Two-step itinerary changes
+
+Reasoning-derived replans go `propose_itinerary_change` → user approval →
+`commit_itinerary_change`. Proposals are non-authoritative rows with `expected_updated_at` versions
+and stable pre-generated IDs for adds; the commit is a single security-definer RPC
+(`commit_itinerary_change_proposal`) that re-checks access, locks rows, validates an operation
+whitelist, and applies everything or nothing. Stale versions return `STALE_PROPOSAL`. Repeated
+commits are idempotent.
+
+### The dashboard is an MCP App, not a second service
+
+`ui/travel-dashboard` is a React/Vite app inlined to one HTML file and served as an MCP resource
+from the same authenticated server. It owns no credentials, no data store, and no second MCP
+endpoint: it calls the Step 4 tools through its host (`src/mcp.ts`), keeps only transient
+presentation state, and routes anything requiring reasoning to the host model via
+`app.sendMessage`. Deterministic writes (Mark Done, Skip, approved commits) call tools directly.
+
+## Invariants that must survive any change
+
+These are enforced in code and asserted in tests; breaking one is a product bug, not a refactor.
+
+- A `firsthand` recommendation requires a recorded visit.
+- Planned and actual itinerary timestamps are distinct; actuals never overwrite plans.
+- `raw_note` is preserved verbatim; generated prose belongs in `generated_summary`.
+- Semantic memory keeps provenance/confidence/status; inferences start as `candidate`.
+- Research stays atomic and sourced, with `valid_as_of`, volatility, and freshness.
+- `remove_itinerary_item` (and a proposal `remove` op) deletes only history-free plan rows.
+  Anything in progress, completed, timed, journaled, visited, reserved, or currently live must be
+  `skipped`/`cancelled` instead — the guard lives in the `delete_itinerary_item` function because
+  the referencing foreign keys are `on delete set null` and would silently orphan real memories.
+- `current_trip_state.last_location` is one ephemeral point per trip, always returned qualified as
+  `fresh`/`stale`/`missing`. Do not add a passive GPS trail.
+- Tools mutate Travel Brain only. No purchases, cancellations, or messages to external systems.
+- Embeddings stay optional; there is no OpenAI dependency.
+
+`agent/TRAVEL_AGENT.md` states the matching behavioral contract for the planning/concierge agent.
+
+## Testing approach
+
+`test/support/scripted-supabase.mjs` is a fake Supabase client scripted with an ordered list of
+expected `{ table, data }` steps; it asserts the table of every call and records filters, order,
+and cardinality. Tests therefore pin the *sequence* of queries a `db.mjs` function makes — changing
+or reordering queries will fail tests by design, and the fixture list must be updated alongside.
+Tests cover config/auth mapping, owner/editor/viewer authorization, timezone-correct read models,
+location freshness, provenance, proposal non-mutation, and the dashboard build.
+
+## Docs
+
+`docs/architecture.md`, `docs/data-model.md`, `docs/mcp-tools.md` (tool contracts),
+`docs/security.md` (mode-by-mode threat model), `docs/companion-pwa.md` (offline companion app
+design), `examples/vertical-slice.md` (the research → plan → visit → journal → recommend → learn
+scenario). The root `README.md` carries the deployment and Supabase/Fly/Google operator procedures.
+Keep these in sync when the tool surface or invariants change.

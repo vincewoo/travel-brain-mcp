@@ -1,9 +1,10 @@
 import React from "react";
 import { AlertRow, TimelineRow } from "../components/rows";
 import { NoteEmpty } from "../components/states";
-import { dayHeadingLabel, flexibilityLabel, joinMeta, plural, shiftDate, shortDateLabel, timeLabel } from "../format";
+import { clockLabel, dayHeadingLabel, flexibilityLabel, joinMeta, plural, shiftDate, shortDateLabel, timeLabel, zoneAbbreviation } from "../format";
 import { withAlerts } from "../timeline";
 import type { DashboardSnapshot, PlanningIssue, TimelineItem, TripSummary } from "../types";
+import { useZone } from "../zone";
 
 interface Props {
   snapshot: DashboardSnapshot;
@@ -33,12 +34,15 @@ function progressOf(item?: TimelineItem | null) {
 }
 
 export function TodayView({ snapshot, trip, busy, confirming, onConfirm, onCommit, onChangeDate, onStatus, ask }: Props) {
+  const zone = useZone();
   const { now, next, timeline, alerts } = snapshot;
   const proposal = snapshot.pending_proposal;
   const percent = progressOf(now);
   const doneCount = timeline.filter((item) => item.status === "completed").length;
+  // The clock in the Now bar is the trip's, so it says which one it is.
+  const nowClock = [clockLabel(snapshot.local_time), zoneAbbreviation(zone)].filter(Boolean).join(" ");
   const nextLine = next
-    ? `Next: ${joinMeta([next.title, timeLabel(next.planned_start)].filter(Boolean).join(", "), flexibilityLabel(next.flexibility).toLowerCase())}`
+    ? `Next: ${joinMeta([next.title, timeLabel(next.planned_start, zone)].filter(Boolean).join(", "), flexibilityLabel(next.flexibility).toLowerCase())}`
     : "";
   const recover = (alert: PlanningIssue) => ask(
     `alert-${alert.id ?? alert.title}`,
@@ -50,7 +54,7 @@ export function TodayView({ snapshot, trip, busy, confirming, onConfirm, onCommi
     <div className="now-bar">
       <div>
         <div>
-          <p className="now-label">{joinMeta("Now", snapshot.local_time ?? snapshot.timezone ?? "", snapshot.running_late_minutes ? `${snapshot.running_late_minutes} min behind` : "")}</p>
+          <p className="now-label">{joinMeta("Now", nowClock, snapshot.running_late_minutes ? `${snapshot.running_late_minutes} min behind` : "")}</p>
           <strong className="now-title">{now?.title ?? "Open time"}</strong>
           {nextLine ? <p className="now-next">{nextLine}</p> : null}
         </div>
@@ -93,7 +97,7 @@ export function TodayView({ snapshot, trip, busy, confirming, onConfirm, onCommi
           <strong>Timeline</strong>
           <span>{joinMeta(plural(timeline.length, "item"), doneCount ? `${doneCount} done` : "", alerts.length ? `${alerts.length} flagged` : "")}</span>
         </div>
-        {withAlerts(timeline, alerts).map((row) => row.kind === "alert"
+        {withAlerts(timeline, alerts, zone).map((row) => row.kind === "alert"
           ? <AlertRow key={row.key} alert={row.alert} busy={Boolean(busy)} onRecover={recover} />
           : <TimelineRow
               key={row.key}

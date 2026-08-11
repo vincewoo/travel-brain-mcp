@@ -1,6 +1,7 @@
 import React from "react";
-import { durationLabel, flexibilityLabel, humanize, joinMeta, plural, timeLabel } from "../format";
+import { durationLabel, flexibilityLabel, humanize, joinMeta, plural, shortDateLabel, timeLabel } from "../format";
 import type { PlanningIssue, SavedPlace, TimelineItem } from "../types";
+import { useZone } from "../zone";
 
 type Tone = "muted" | "info" | "warning" | "danger" | "ok";
 
@@ -31,17 +32,18 @@ interface TimelineRowProps {
 }
 
 export function TimelineRow({ item, phase, current, busy, onDone, onSkip, onAdjust }: TimelineRowProps) {
+  const zone = useZone();
   const done = item.status === "completed";
   const skipped = ["skipped", "cancelled"].includes(item.status ?? "");
   const inactive = done || skipped;
   const start = phase === "active" ? item.actual_start ?? item.planned_start : item.planned_start;
-  const shifted = item.actual_start && item.planned_start && timeLabel(item.actual_start) !== timeLabel(item.planned_start);
+  const shifted = item.actual_start && item.planned_start && timeLabel(item.actual_start, zone) !== timeLabel(item.planned_start, zone);
   const under = current ? "now" : durationLabel(item.actual_start ?? item.planned_start, item.actual_end ?? item.planned_end);
   const flex = flexibility(item);
 
   return <article className={`row timeline-row${inactive ? " is-done" : ""}${current ? " is-current" : ""}`}>
     <div className={`time-gutter${inactive ? " past" : ""}${current ? " current" : ""}`}>
-      {timeLabel(start) || "Unscheduled"}{under ? <span>{under}</span> : null}
+      {timeLabel(start, zone) || "Unscheduled"}{under ? <span>{under}</span> : null}
     </div>
     <div className="row-body">
       <div className="row-title-line">
@@ -54,7 +56,7 @@ export function TimelineRow({ item, phase, current, busy, onDone, onSkip, onAdju
       {(() => {
         const meta = joinMeta(
           humanize(item.item_type ?? "activity"),
-          shifted ? `planned ${timeLabel(item.planned_start)}` : "",
+          shifted ? `planned ${timeLabel(item.planned_start, zone)}` : "",
           item.notes ?? "",
           item.travel_minutes_to_next ? `${item.travel_minutes_to_next} min to the next stop` : "",
         );
@@ -90,7 +92,7 @@ export function IssueRow({ issue }: { issue: PlanningIssue }) {
   return <div className={`issue-row ${issueTone(issue.severity)}`}>
     <i className={`dot ${issueTone(issue.severity)}`} />
     <div><strong>{issue.title}</strong>{issue.detail ? <span> — {issue.detail}</span> : null}</div>
-    <small>{issue.date ? new Date(`${issue.date.slice(0, 10)}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" }) : "—"}</small>
+    <small>{issue.date ? shortDateLabel(issue.date) : "—"}</small>
   </div>;
 }
 
@@ -101,7 +103,7 @@ export function PlaceRow({ place, busy, onPlan }: { place: SavedPlace; busy?: bo
     place.locality ?? place.region ?? "",
     place.priority ? `P${place.priority}` : "",
     place.research_count ? plural(place.research_count, "research note") : "",
-    place.itinerary_dates?.length ? `scheduled ${place.itinerary_dates.map((date) => new Date(`${date.slice(0, 10)}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" })).join(", ")}` : "",
+    place.itinerary_dates?.length ? `scheduled ${place.itinerary_dates.map(shortDateLabel).join(", ")}` : "",
   );
   const settled = ["planned", "rejected", "visited"].includes(place.trip_status ?? "") || place.scheduled;
   return <article className="row">

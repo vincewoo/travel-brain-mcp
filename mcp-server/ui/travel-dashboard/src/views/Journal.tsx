@@ -2,6 +2,7 @@ import React from "react";
 import { BlankSlate } from "../components/states";
 import { dateTimeLabel, joinMeta, plural, sentence, timeLabel, timeRangeLabel } from "../format";
 import type { JournalEntry, JournalOverview } from "../types";
+import { useZone } from "../zone";
 
 interface Props {
   journal: JournalOverview;
@@ -10,17 +11,19 @@ interface Props {
 
 /** The visit context collapses to one line so the raw note stays the loudest thing in the card. */
 function VisitContext({ entry }: { entry: JournalEntry }) {
+  const zone = useZone();
   const item = entry.itinerary_items;
   if (!item) return null;
-  const range = timeRangeLabel(item.actual_start ?? item.planned_start, item.actual_end ?? item.planned_end);
-  const shifted = item.actual_start && item.planned_start && timeLabel(item.actual_start) !== timeLabel(item.planned_start);
+  const range = timeRangeLabel(item.actual_start ?? item.planned_start, item.actual_end ?? item.planned_end, zone);
+  const shifted = item.actual_start && item.planned_start && timeLabel(item.actual_start, zone) !== timeLabel(item.planned_start, zone);
   return <div className="visit-context">
     <span>{range}</span>
-    <span>{joinMeta(item.title, shifted ? `planned ${timeLabel(item.planned_start)}` : "", item.status === "completed" ? "done" : sentence(item.status).toLowerCase())}</span>
+    <span>{joinMeta(item.title, shifted ? `planned ${timeLabel(item.planned_start, zone)}` : "", item.status === "completed" ? "done" : sentence(item.status).toLowerCase())}</span>
   </div>;
 }
 
 export function JournalView({ journal, ask }: Props) {
+  const zone = useZone();
   const remember = () => ask("journal", "Asking Claude to capture a note…", "Help me capture a raw journal note and relevant context without rewriting my words.");
 
   if (!journal.entries.length) return <div className="view">
@@ -42,7 +45,7 @@ export function JournalView({ journal, ask }: Props) {
     {journal.entries.map((entry) => <article className="journal-card" key={entry.id}>
       <header>
         <strong>{entry.places?.name ?? entry.itinerary_items?.title ?? "Trip note"}</strong>
-        <time>{joinMeta(dateTimeLabel(entry.captured_at), (entry.visibility ?? "private").replaceAll("_", " "))}</time>
+        <time>{joinMeta(dateTimeLabel(entry.captured_at, zone), (entry.visibility ?? "private").replaceAll("_", " "))}</time>
       </header>
       <p className="raw-note">{entry.raw_note}</p>
       {entry.reaction ? <p className="reaction">Reaction · {entry.reaction}</p> : null}

@@ -1,23 +1,25 @@
+import { zoneDate } from "./format";
 import type { PlanningIssue, TimelineItem } from "./types";
 
 export type TimelineRowModel =
   | { kind: "item"; key: string; item: TimelineItem }
   | { kind: "alert"; key: string; alert: PlanningIssue };
 
-const dateOf = (value?: string | null) => (value ?? "").slice(0, 10);
-
 /**
  * Each alert renders immediately after the timeline item its `item_ids` points at.
  * Failing that it follows the last item sharing its date, and failing that it goes to the top.
+ *
+ * An alert's `date` is a trip-local day, so the item instants it is matched against have to be
+ * resolved in the trip's zone too — a UTC reading would misplace anything either side of midnight.
  */
-export function withAlerts(timeline: TimelineItem[], alerts: PlanningIssue[]): TimelineRowModel[] {
+export function withAlerts(timeline: TimelineItem[], alerts: PlanningIssue[], zone: string): TimelineRowModel[] {
   const positionFor = (alert: PlanningIssue) => {
     const ids = new Set(alert.item_ids ?? []);
     let byId = -1;
     let byDate = -1;
     timeline.forEach((item, index) => {
       if (ids.has(item.id)) byId = index;
-      if (alert.date && dateOf(item.planned_start ?? item.actual_start) === dateOf(alert.date)) byDate = index;
+      if (alert.date && zoneDate(item.planned_start ?? item.actual_start, zone) === alert.date.slice(0, 10)) byDate = index;
     });
     if (byId >= 0) return byId + 1;
     return byDate >= 0 ? byDate + 1 : 0;

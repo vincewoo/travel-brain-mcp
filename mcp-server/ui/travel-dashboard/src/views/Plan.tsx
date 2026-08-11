@@ -4,6 +4,7 @@ import { NoteEmpty } from "../components/states";
 import { dateLabel, humanize, joinMeta, plural } from "../format";
 import { relatedIssues, withAlerts } from "../timeline";
 import type { PlanOverview, PlanningIssue, SavedPlace, TimelineItem } from "../types";
+import { useZone } from "../zone";
 
 interface Props {
   plan: PlanOverview;
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function PlanView({ plan, selected, busy, onToggle, onFitPlaces, onOpenDay, ask }: Props) {
+  const zone = useZone();
   const waiting = plan.unscheduled_places.length;
   const recover = (date: string) => (alert: PlanningIssue) => ask(
     `alert-${alert.id ?? alert.title}`,
@@ -58,7 +60,7 @@ export function PlanView({ plan, selected, busy, onToggle, onFitPlaces, onOpenDa
             <button type="button" className="link-button quiet" disabled={Boolean(busy)} onClick={() => ask(`optimize-${day.date}`, `Asking Claude to optimize ${dateLabel(day.date)}…`, `Optimize ${day.date}, preserve fixed commitments, address ${issues.map((issue) => issue.title).join(", ") || "returned constraints"}, and prepare a proposal without committing it.`)}>Optimize</button>
           </div>
         </div>
-        {day.items.length ? withAlerts(day.items, issues).map((row) => row.kind === "alert"
+        {day.items.length ? withAlerts(day.items, issues, zone).map((row) => row.kind === "alert"
           ? <AlertRow key={row.key} alert={row.alert} busy={Boolean(busy)} onRecover={recover(day.date)} />
           : <TimelineRow
               key={row.key}

@@ -1,213 +1,117 @@
 /*
- * Mobile-first, one hand, bright sunlight, and often a moving train. Large touch targets, high
- * contrast, no layout that depends on hover, and nothing that reflows when data is missing.
+ * The companion's own layer over the shared Travel Brain design language.
+ *
+ * Everything that makes a row a row lives in `ui/shared/travel-brain.css`, which the dashboard
+ * imports too — the phone and the dashboard are one product and should read like it. What is
+ * particular to this app is the situation it is used in: one hand, bright sunlight, often a moving
+ * train, and no connection. So the control tokens go up to thumb size, the type ramp goes up a
+ * notch for reading at arm's length, and the shell is a full-height column with a fixed bottom nav
+ * instead of an embedded panel.
  */
 
+@import "../../shared/travel-brain.css";
+
 :root {
-  --bg: #f8fafc;
-  --surface: #ffffff;
-  --surface-sunk: #f1f5f9;
-  --border: #e2e8f0;
-  --text: #0f172a;
-  --muted: #64748b;
-  --accent: #0369a1;
-  --accent-soft: #e0f2fe;
-  --warn: #b45309;
-  --warn-soft: #fef3c7;
-  --danger: #b91c1c;
-  --radius: 14px;
+  font-size: 15px;
+  /* Thumbs, not cursors. The shared components size themselves from these. */
+  --control-height: 40px; --chip-height: 36px; --seg-height: 32px;
+  --icon-width: 40px; --icon-height: 40px; --tap-height: 36px;
+  --radius-control: 9px;
+  /* One notch up from the dashboard's ramp: read at arm's length, in daylight. */
+  --type-head: 16px; --type-row: 15px; --type-meta: 13.5px; --type-small: 13px;
+  --type-note: 15px; --type-gutter: 13.5px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f172a;
-    --surface: #1e293b;
-    --surface-sunk: #172033;
-    --border: #334155;
-    --text: #f1f5f9;
-    --muted: #94a3b8;
-    --accent: #7dd3fc;
-    --accent-soft: #0c4a6e;
-    --warn: #fcd34d;
-    --warn-soft: #422006;
-    --danger: #fca5a5;
-  }
+body { background: var(--surface-page); color: var(--text); overscroll-behavior-y: contain; }
+
+.app { display: flex; flex-direction: column; min-height: 100dvh; background: var(--surface-page); }
+
+/* Shell. It scrolls away deliberately: the trip title is orientation, read once, while the Now bar
+   below it is the thing worth pinning to the top of a phone. */
+.app > .shell-header {
+  align-items: flex-start;
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
 }
-
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  overscroll-behavior-y: contain;
+.shell-header .header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.sync-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+  padding: 0 16px 11px; border-bottom: 1px solid var(--border);
 }
+.sync-row .spacer { flex: 1 1 auto; }
 
-button { font: inherit; color: inherit; cursor: pointer; }
+main { flex: 1 1 auto; padding-bottom: calc(64px + var(--safe-bottom)); }
+.view { gap: 13px; padding: 14px 16px; }
+.view.banners { padding-bottom: 0; }
 
-.app { min-height: 100dvh; display: flex; flex-direction: column; }
+/* A container head has more to say than a panel this narrow can fit on one line, so it wraps
+   rather than squeezing the date it is named by. */
+.container-head { flex-wrap: wrap; }
+.container-head .head-label { flex-wrap: wrap; }
+.container-head strong { white-space: nowrap; }
 
-.header {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  padding: 12px 16px 10px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+/* The banner form of a message: sign-in lost, sync failed, install this app. */
+.banner {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 9px;
+  padding: 11px 14px; border: 1px solid var(--info-edge); border-radius: var(--radius-container);
+  background: var(--info-bg); color: var(--info); font-size: var(--type-meta);
 }
-.header h1 { margin: 0; font-size: 17px; font-weight: 650; }
-.header .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.banner.danger { border-color: var(--danger-edge); background: var(--danger-bg); color: var(--danger); }
+.banner.warning { border-color: var(--warning-edge); background: var(--warning-bg); color: var(--warning); }
+.banner .button { margin-left: auto; }
 
-.sync-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.sync-row .spacer { flex: 1; }
-
-.pill {
-  border: 1px solid var(--border);
-  background: var(--surface-sunk);
-  border-radius: 999px;
-  padding: 5px 11px;
-  font-size: 12.5px;
-  color: var(--muted);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.pill.stale { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
-.pill.offline { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
-
-.button {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-size: 14px;
-  min-height: 36px;
-}
-.button.primary { background: var(--accent); color: var(--bg); border-color: transparent; font-weight: 600; }
-.button:disabled { opacity: 0.55; cursor: default; }
-
-main { flex: 1; padding: 14px 16px calc(84px + var(--safe-bottom)); }
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-  margin-bottom: 12px;
-}
-.card.flush { padding: 0; overflow: hidden; }
-
-.eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
-
-.headline { font-size: 25px; line-height: 1.2; font-weight: 680; margin: 0; }
-.headline-time { font-size: 15px; color: var(--accent); font-weight: 620; margin-top: 4px; }
-.meta { color: var(--muted); font-size: 13.5px; margin-top: 6px; }
-.notes { margin-top: 10px; font-size: 14.5px; white-space: pre-wrap; }
-
-.row {
-  display: flex;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  align-items: baseline;
-  text-align: left;
-  width: 100%;
-  background: none;
-  border-left: 0;
-  border-right: 0;
-  border-top: 0;
-}
-.row:last-child { border-bottom: 0; }
-.row .time { width: 52px; flex: none; font-variant-numeric: tabular-nums; font-size: 14px; color: var(--muted); }
-.row .body { flex: 1; min-width: 0; }
-.row .title { font-weight: 570; }
-.row .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
-.row.done .title { text-decoration: line-through; color: var(--muted); }
-.row.current { background: var(--accent-soft); }
-
-.tag {
-  display: inline-block;
-  font-size: 11.5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--surface-sunk);
-  color: var(--muted);
-  margin-right: 6px;
-}
-.tag.fixed { background: var(--accent-soft); color: var(--accent); }
-.tag.visited { background: var(--accent-soft); color: var(--accent); }
-.tag.stale { background: var(--warn-soft); color: var(--warn); }
-
-.alert {
-  background: var(--warn-soft);
-  color: var(--warn);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  font-size: 13.5px;
-  margin-bottom: 12px;
-}
-
-.day-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
+/* Day strip: the phone's substitute for the dashboard's date stepper. */
+.day-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
 .day-strip::-webkit-scrollbar { display: none; }
-.day-chip {
-  flex: none;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 999px;
-  padding: 7px 13px;
-  font-size: 13.5px;
-  white-space: nowrap;
+.day-strip .chip { display: inline-flex; align-items: center; gap: 6px; }
+.day-strip .chip.today { border-color: var(--border-strong); }
+
+/* Offline detail. An address you can hand to a driver is the whole point of carrying this app,
+   so the local-script line is the one thing set larger than the title above it. */
+.detail { display: grid; gap: 3px; margin-top: 7px; }
+.detail .address { font-size: var(--type-meta); color: var(--muted); }
+.detail .address-local { font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
+.detail .code {
+  align-self: start; margin-top: 3px; padding: 3px 8px; border: 1px solid var(--border);
+  border-radius: var(--radius-control); background: var(--surface-sunken);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; letter-spacing: .04em;
 }
-.day-chip.selected { background: var(--accent); color: var(--bg); border-color: transparent; font-weight: 620; }
-.day-chip.today { border-color: var(--accent); }
+.detail .link { align-self: start; color: var(--info); font-size: var(--type-meta); font-weight: 500; text-decoration: none; min-height: var(--tap-height); }
+.detail .notes { margin-top: 4px; font-size: var(--type-meta); white-space: pre-wrap; }
 
-.search {
-  width: 100%;
-  padding: 11px 13px;
-  font-size: 16px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  margin-bottom: 12px;
-}
-
-.address { font-size: 14px; margin-top: 6px; }
-.address-local { font-size: 17px; margin-top: 4px; line-height: 1.35; }
-.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; letter-spacing: 0.04em; }
-.link { color: var(--accent); text-decoration: none; font-size: 14px; }
-
+/* Bottom nav: the same active treatment as the dashboard's tabs, moved to where a thumb reaches. */
 .nav {
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding-bottom: var(--safe-bottom);
-  z-index: 5;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  border-top: 1px solid var(--border); padding-bottom: var(--safe-bottom);
+  background: color-mix(in srgb, var(--surface-page) 94%, transparent);
+  backdrop-filter: blur(8px);
 }
 .nav button {
-  border: 0;
-  background: none;
-  padding: 11px 4px 13px;
-  font-size: 12.5px;
-  color: var(--muted);
+  border: 0; background: none; padding: 11px 4px 12px; color: var(--muted);
+  font-size: var(--type-small); font-weight: 500;
 }
-.nav button.selected { color: var(--accent); font-weight: 650; }
+.nav button.active { color: var(--text); font-weight: 600; box-shadow: inset 0 2px 0 var(--text); }
 
-.empty { color: var(--muted); font-size: 14.5px; text-align: center; padding: 28px 12px; }
+/* Sign-in and first-run, before there is a trip to show. */
 .centre { display: grid; place-items: center; min-height: 100dvh; padding: 24px; text-align: center; }
-.centre p { color: var(--muted); max-width: 32ch; }
-.error { color: var(--danger); font-size: 14px; margin-top: 8px; }
+.centre h1 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+.centre p { max-width: 34ch; margin: 8px auto 0; color: var(--muted); font-size: var(--type-meta); }
+.centre .button-row { justify-content: center; margin-top: 16px; }
+
+/* A phone is narrow enough that the timeline gutter sits inline, as the dashboard does at its
+   own narrowest. Same rule, same reason. */
+.timeline-row, .alert-row, .skeleton-row { grid-template-columns: minmax(0, 1fr); }
+.timeline-row .time-gutter { display: flex; align-items: baseline; gap: 4px; font-size: var(--type-small); }
+.timeline-row .time-gutter span { display: inline; font-size: var(--type-small); }
+.timeline-row .time-gutter span::before { content: "· "; }
+.alert-row > div:first-child { display: none; }
+.search-row { flex-wrap: wrap; }
+.area-select { flex: 1 1 100%; max-width: none; height: 40px; }
+.search input { height: 40px; font-size: 16px; /* 16px keeps iOS from zooming the field on focus. */ }
+.chip-row, .group-row .segments { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.chip-row::-webkit-scrollbar, .group-row .segments::-webkit-scrollbar { display: none; }
+
+/* Distance sits where a time sits in a timeline, so a nearby list scans like the itinerary does. */
+.distance-gutter { flex: 0 0 auto; color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
+.footnote { padding: 9px 14px; border-top: 1px solid var(--border-inner); color: var(--muted); font-size: var(--type-small); }

@@ -1,8 +1,8 @@
 import React from "react";
 import { AlertRow, TimelineRow } from "../components/rows";
 import { NoteEmpty } from "../components/states";
-import { clockLabel, dayHeadingLabel, flexibilityLabel, joinMeta, plural, shiftDate, shortDateLabel, timeLabel, zoneAbbreviation } from "../format";
-import { withAlerts } from "../timeline";
+import { clockLabel, dayHeadingLabel, flexibilityLabel, joinMeta, plural, shiftDate, shortDateLabel, timeLabel, zoneAbbreviation } from "../../../shared/format";
+import { withAlerts } from "../../../shared/timeline";
 import type { DashboardSnapshot, PlanningIssue, TimelineItem, TripSummary } from "../types";
 import { useZone } from "../zone";
 

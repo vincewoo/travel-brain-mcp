@@ -1,8 +1,8 @@
 import React from "react";
 import { AlertRow, IssueRow, TimelineRow } from "../components/rows";
 import { NoteEmpty } from "../components/states";
-import { dateLabel, humanize, joinMeta, plural } from "../format";
-import { relatedIssues, withAlerts } from "../timeline";
+import { dateLabel, humanize, joinMeta, plural } from "../../../shared/format";
+import { relatedIssues, withAlerts } from "../../../shared/timeline";
 import type { PlanOverview, PlanningIssue, SavedPlace, TimelineItem } from "../types";
 import { useZone } from "../zone";
 

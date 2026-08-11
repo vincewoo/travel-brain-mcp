@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { nearbyCards, placeCards, placeIndex, position, tripDays } from "./derive";
+import { Banner, SkeletonList } from "./components/states";
+import { browserZone, dateLabel, humanize, joinMeta, zoneLabel } from "../../shared/format";
+import { relatedIssues } from "../../shared/timeline";
+import {
+  journalEntries,
+  nearbyCards,
+  placeCards,
+  placeIndex,
+  planView,
+  position,
+  recommendationCards,
+  tripDays,
+} from "./derive";
 import { relativeSince } from "./format";
 import {
   beginSignIn,
@@ -12,22 +24,33 @@ import {
 import { forgetDevice } from "./store";
 import type { Snapshot, Tab } from "./types";
 import { CardView } from "./views/Card";
-import { DayView } from "./views/Day";
+import { JournalView } from "./views/Journal";
 import { NowView } from "./views/Now";
-import { PlacesView } from "./views/Places";
+import { PlacesView, type PlaceFilter, type PlaceGrouping } from "./views/Places";
+import { PlanView } from "./views/Plan";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "now", label: "Now" },
-  { key: "day", label: "Plan" },
+  { key: "plan", label: "Plan" },
   { key: "places", label: "Places" },
+  { key: "journal", label: "Journal" },
   { key: "card", label: "Card" },
 ];
+const SKELETON_LABEL: Record<Tab, string> = {
+  now: "Timeline", plan: "Plan", places: "Places", journal: "Journal", card: "Card",
+};
 
 /** Long enough that a cached plan is not mistaken for a live one; short enough not to nag. */
 const STALE_AFTER_MINUTES = 180;
 
 const isStandalone = () =>
   window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone === true;
+
+const tripDates = (snapshot: Snapshot) => snapshot.trip.start_date || snapshot.trip.end_date
+  ? `${dateLabel(snapshot.trip.start_date)}${snapshot.trip.start_date && snapshot.trip.end_date ? " – " : ""}${dateLabel(snapshot.trip.end_date, true)}`
+  : "Dates not set";
+/** Only worth saying when the trip is on a different clock from the reader — at home it is noise. */
+const zoneNote = (zone: string) => zone === browserZone() ? "" : `Times in ${zoneLabel(zone)}`;
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -42,6 +65,12 @@ export default function App() {
   const [devicePoint, setDevicePoint] = useState<{ latitude: number; longitude: number } | null>(null);
   const [clock, setClock] = useState(() => new Date());
   const [installHint, setInstallHint] = useState(false);
+  // Places view: search, area, status and grouping are all client-side over the cached rows.
+  const [query, setQuery] = useState("");
+  const [city, setCity] = useState("all");
+  const [placeFilter, setPlaceFilter] = useState<PlaceFilter>("all");
+  const [group, setGroup] = useState<PlaceGrouping>("category");
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   const refresh = useCallback(async (tripId?: string) => {
     setSyncing(true);
@@ -115,7 +144,7 @@ export default function App() {
   }, [refresh]);
 
   const days = useMemo(() => (snapshot ? tripDays(snapshot) : []), [snapshot]);
-  // Hooks run before the "no snapshot yet" return below, so this has to tolerate an empty cache.
+  // Hooks run before the "no snapshot yet" return below, so these have to tolerate an empty cache.
   const here = useMemo(
     () =>
       snapshot
@@ -124,6 +153,13 @@ export default function App() {
     [snapshot, clock]
   );
   const places = useMemo(() => (snapshot ? placeIndex(snapshot) : new Map()), [snapshot]);
+  const items = useMemo(
+    () => new Map((snapshot?.itinerary ?? []).map((item) => [item.id, item])),
+    [snapshot]
+  );
+  const plan = useMemo(() => (snapshot ? planView(snapshot, clock) : null), [snapshot, clock]);
+  const journal = useMemo(() => (snapshot ? journalEntries(snapshot) : []), [snapshot]);
+  const recommendations = useMemo(() => (snapshot ? recommendationCards(snapshot) : []), [snapshot]);
 
   // The device's own GPS when the traveller offers it, otherwise the last position Travel Brain
   // knows about — labelled, never silently substituted.
@@ -153,8 +189,10 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="centre">
-        <p>Opening your trip…</p>
+      <div className="app">
+        <div className="view">
+          <SkeletonList label="Your trip" />
+        </div>
       </div>
     );
   }
@@ -168,13 +206,13 @@ export default function App() {
             Sign in once while you have a connection. After that the trip stays on this phone and
             opens with no signal at all.
           </p>
-          <div style={{ marginTop: 16 }}>
+          <div className="button-row">
             <button type="button" className="button primary" onClick={() => void beginSignIn()}>
               Sign in
             </button>
           </div>
-          {error ? <div className="error">{error}</div> : null}
-          {!online ? <div className="error">No connection — the first sign-in needs one.</div> : null}
+          {error ? <p>{error}</p> : null}
+          {!online ? <p>No connection — the first sign-in needs one.</p> : null}
         </div>
       </div>
     );
@@ -182,47 +220,67 @@ export default function App() {
 
   const staleMinutes = syncedAt ? (Date.now() - new Date(syncedAt).getTime()) / 60_000 : Infinity;
   const stale = staleMinutes > STALE_AFTER_MINUTES;
+  const selected = selectedDate ?? here.localDate;
+  const todayIssues = plan ? relatedIssues(here.localDate, plan.days.find((day) => day.date === here.localDate)?.items ?? [], plan.issues) : [];
 
   return (
     <div className="app">
-      <header className="header">
-        <h1>{snapshot.trip.title}</h1>
-        <div className="sub">
-          {here.localTime} · {snapshot.trip.timezone}
-          {origin ? "" : " · no position"}
+      <header className="shell-header">
+        <div>
+          <h1>{snapshot.trip.title}</h1>
+          <p className="shell-meta">{joinMeta(
+            humanize(snapshot.trip.status),
+            tripDates(snapshot),
+            snapshot.trip.destination_summary ?? "",
+            zoneNote(snapshot.trip.timezone),
+          )}</p>
         </div>
-        <div className="sync-row">
-          <span className={`pill${stale ? " stale" : ""}`}>Synced {relativeSince(syncedAt)}</span>
-          {!online ? <span className="pill offline">Offline</span> : null}
-          <span className="spacer" />
-          {!origin ? (
-            <button type="button" className="button" onClick={locate}>
-              Locate
-            </button>
-          ) : null}
-          <button type="button" className="button" onClick={() => void refresh()} disabled={syncing || !online}>
-            {syncing ? "Syncing…" : "Sync"}
+        <div className="header-actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Sync now"
+            disabled={syncing || !online}
+            onClick={() => void refresh()}
+          >
+            {syncing ? "…" : "↻"}
           </button>
         </div>
-        {signedOut ? (
-          <div className="error">
-            Signed out.{" "}
-            <button type="button" className="button" onClick={() => void beginSignIn()}>
-              Sign in again
-            </button>
-          </div>
-        ) : null}
-        {error ? <div className="error">{error}</div> : null}
       </header>
 
+      <div className="sync-row">
+        <span className={`pill${stale ? " warning" : ""}`}>Synced {relativeSince(syncedAt)}</span>
+        {!online ? <span className="pill warning">Offline</span> : null}
+        {!origin ? <span className="pill">No position</span> : null}
+        <span className="spacer" />
+        {!origin ? (
+          <button type="button" className="button" onClick={locate}>
+            Locate
+          </button>
+        ) : null}
+      </div>
+
       <main>
-        {installHint ? (
-          <div className="alert">
-            Add this to your Home Screen. Installed, it keeps the trip cached; left in a browser tab,
-            iOS may clear it after a week unused.{" "}
-            <button type="button" className="button" onClick={() => setInstallHint(false)}>
-              Got it
-            </button>
+        {signedOut || error || installHint ? (
+          <div className="view banners">
+            {signedOut ? (
+              <Banner tone="warning">
+                Signed out — the cached trip still reads, but it will not refresh.
+                <button type="button" className="button" onClick={() => void beginSignIn()}>
+                  Sign in again
+                </button>
+              </Banner>
+            ) : null}
+            {error ? <Banner tone="danger">{error}</Banner> : null}
+            {installHint ? (
+              <Banner>
+                Add this to your Home Screen. Installed, it keeps the trip cached; left in a browser
+                tab, iOS may clear it after a week unused.
+                <button type="button" className="button" onClick={() => setInstallHint(false)}>
+                  Got it
+                </button>
+              </Banner>
+            ) : null}
           </div>
         ) : null}
 
@@ -232,50 +290,69 @@ export default function App() {
             position={here}
             places={places}
             nearby={nearby}
-            onOpenDay={() => setTab("day")}
+            issues={todayIssues}
+            clock={clock}
           />
         ) : null}
-        {tab === "day" ? (
-          <DayView
+        {tab === "plan" ? (
+          plan ? (
+            <PlanView
+              snapshot={snapshot}
+              plan={plan}
+              cards={cards}
+              days={days}
+              selected={selected}
+              today={here.localDate}
+              places={places}
+              onSelect={setSelectedDate}
+            />
+          ) : (
+            <div className="view"><SkeletonList label={SKELETON_LABEL.plan} /></div>
+          )
+        ) : null}
+        {tab === "places" ? (
+          <PlacesView
+            cards={cards}
+            query={query}
+            city={city}
+            status={placeFilter}
+            group={group}
+            openGroups={openGroups}
+            onQuery={setQuery}
+            onCity={setCity}
+            onStatus={setPlaceFilter}
+            onGroup={setGroup}
+            onToggleGroup={(key) => setOpenGroups((current) => ({ ...current, [key]: current[key] === false }))}
+            onClear={() => { setQuery(""); setCity("all"); setPlaceFilter("all"); }}
+          />
+        ) : null}
+        {tab === "journal" ? (
+          <JournalView
             snapshot={snapshot}
-            days={days}
-            selected={selectedDate ?? here.localDate}
-            today={here.localDate}
+            entries={journal}
+            recommendations={recommendations}
             places={places}
-            onSelect={setSelectedDate}
+            items={items}
           />
         ) : null}
-        {tab === "places" ? <PlacesView cards={cards} /> : null}
         {tab === "card" ? (
-          <>
-            <CardView snapshot={snapshot} places={places} />
-            <section className="card">
-              <div className="eyebrow">This device</div>
-              <div className="meta">
-                The whole trip, including journal notes, is stored on this phone so it works offline.
-              </div>
-              <div style={{ marginTop: 10 }}>
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => {
-                    void forgetDevice().then(() => location.reload());
-                  }}
-                >
-                  Sign out and erase from this device
-                </button>
-              </div>
-            </section>
-          </>
+          <CardView
+            snapshot={snapshot}
+            places={places}
+            onForget={() => {
+              void forgetDevice().then(() => location.reload());
+            }}
+          />
         ) : null}
       </main>
 
-      <nav className="nav">
+      <nav className="nav" aria-label="Travel Brain views">
         {TABS.map((entry) => (
           <button
             type="button"
             key={entry.key}
-            className={tab === entry.key ? "selected" : ""}
+            className={tab === entry.key ? "active" : ""}
+            aria-current={tab === entry.key ? "page" : undefined}
             onClick={() => setTab(entry.key)}
           >
             {entry.label}

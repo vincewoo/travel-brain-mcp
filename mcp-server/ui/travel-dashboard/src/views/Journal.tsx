@@ -1,6 +1,6 @@
 import React from "react";
 import { BlankSlate } from "../components/states";
-import { dateTimeLabel, joinMeta, plural, sentence, timeLabel, timeRangeLabel } from "../format";
+import { dateTimeLabel, joinMeta, plural, sentence, timeLabel, timeRangeLabel } from "../../../shared/format";
 import type { JournalEntry, JournalOverview } from "../types";
 import { useZone } from "../zone";
 

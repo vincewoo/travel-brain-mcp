@@ -3,14 +3,15 @@ import { randomUUID } from 'node:crypto';
 import { zonedInstant, zonedInstants } from './instants.mjs';
 import {
   activeScheduledItems,
-  dateRange,
   localDateTime,
   overlapIssues,
+  planDays,
+  planIssues,
   researchFreshness,
   schedulePosition,
   sortedTimeline,
-  stableIssueId,
   timelineInstant,
+  unscheduledTripPlaces,
   validInstant
 } from './trip-clock.mjs';
 
@@ -770,75 +771,23 @@ export async function getPlanOverview(ctx, tripId, atTime = new Date()) {
   const reservations = results[1].data ?? [];
   const tripPlaces = results[2].data ?? [];
   const research = results[3].data ?? [];
-  const issues = overlapIssues(items, trip.timezone);
-  for (const item of activeScheduledItems(items)) {
-    if (['planned', 'confirmed'].includes(item.status) && !item.planned_start) {
-      issues.push({
-        id: stableIssueId('missing_start', [item.id]), type: 'missing_start', severity: 'warning',
-        title: 'Planned item has no start time', detail: `${item.title} is not placed on a day.`, date: null, item_ids: [item.id]
-      });
-    }
-  }
-  const scheduledPlaceIds = new Set(activeScheduledItems(items).filter((item) => item.place_id).map((item) => item.place_id));
-  const unscheduledPlaces = tripPlaces.filter((link) => link.status === 'shortlist' && !scheduledPlaceIds.has(link.place_id));
-  for (const link of unscheduledPlaces.filter((place) => place.priority === 5)) {
-    issues.push({
-      id: stableIssueId('high_priority_unscheduled', [link.place_id]), type: 'high_priority_unscheduled', severity: 'warning',
-      title: 'High-priority saved place is unscheduled', detail: `${link.places?.name ?? 'Saved place'} is not on the itinerary.`,
-      date: null, item_ids: [], place_ids: [link.place_id]
-    });
-  }
-  for (const placeId of scheduledPlaceIds) {
-    const placeResearch = research.filter((entry) => entry.place_id === placeId);
-    if (placeResearch.some((entry) => entry.volatility === 'volatile') && researchFreshness(placeResearch, validInstant(atTime, 'at_time')) === 'stale') {
-      const itemIds = items.filter((item) => item.place_id === placeId).map((item) => item.id);
-      issues.push({
-        id: stableIssueId('stale_volatile_research', itemIds), type: 'stale_volatile_research', severity: 'warning',
-        title: 'Planned place has stale volatile research', detail: 'Time-sensitive research should be refreshed before relying on it.',
-        date: null, item_ids: itemIds, place_ids: [placeId]
-      });
-    }
-  }
-  const configuredBuffer = Number(trip.metadata?.minimum_buffer_minutes);
-  if (Number.isFinite(configuredBuffer) && configuredBuffer > 0) {
-    const timed = sortedTimeline(activeScheduledItems(items)).filter((item) => item.planned_start && item.planned_end);
-    for (let index = 0; index < timed.length - 1; index += 1) {
-      const gap = (new Date(timed[index + 1].planned_start) - new Date(timed[index].planned_end)) / 60_000;
-      if (gap >= 0 && gap < configuredBuffer) {
-        const date = localDateTime(timed[index].planned_start, trip.timezone).date;
-        issues.push({
-          id: stableIssueId('insufficient_buffer', [timed[index].id, timed[index + 1].id], date),
-          type: 'insufficient_buffer', severity: 'warning', title: 'Configured schedule buffer is too short',
-          detail: `${Math.round(gap)} minutes is below the configured ${configuredBuffer}-minute minimum.`,
-          date, item_ids: [timed[index].id, timed[index + 1].id]
-        });
-      }
-    }
-  }
-  const itemDates = items.filter((item) => item.planned_start).map((item) => localDateTime(item.planned_start, trip.timezone).date);
-  const dates = dateRange(trip.start_date, trip.end_date);
-  for (const date of itemDates) if (!dates.includes(date)) dates.push(date);
-  dates.sort();
-  const placeById = new Map(tripPlaces.map((link) => [link.place_id, link.places]));
-  const days = dates.map((date) => {
-    const dayItems = items.filter((item) => item.planned_start && localDateTime(item.planned_start, trip.timezone).date === date);
-    const areas = [...new Set(dayItems.map((item) => placeById.get(item.place_id)?.locality ?? placeById.get(item.place_id)?.region).filter(Boolean))];
-    const fixedReservations = reservations.filter((reservation) => reservation.reserved_start && localDateTime(reservation.reserved_start, trip.timezone).date === date);
-    return {
-      date,
-      area: areas.length ? areas.join(' / ') : null,
-      items: sortedTimeline(dayItems),
-      fixed_anchors: [...dayItems.filter((item) => item.flexibility === 'fixed'), ...fixedReservations],
-      issue_count: issues.filter((issue) => issue.date === date || issue.item_ids?.some((id) => dayItems.some((item) => item.id === id))).length
-    };
+  // The same derivation the companion runs offline, so the phone and the dashboard cannot
+  // disagree about how many issues a plan has.
+  const issues = planIssues({
+    items, tripPlaces, research, timezone: trip.timezone,
+    minimumBufferMinutes: trip.metadata?.minimum_buffer_minutes, at: atTime
+  });
+  const days = planDays({
+    items, reservations, tripPlaces, issues,
+    timezone: trip.timezone, startDate: trip.start_date, endDate: trip.end_date
   });
   return {
     trip: { id: trip.id, title: trip.title, timezone: trip.timezone, status: trip.status, start_date: trip.start_date, end_date: trip.end_date },
-    total_days: dates.length,
+    total_days: days.length,
     scheduled_count: activeScheduledItems(items).length,
     days,
     issues,
-    unscheduled_places: unscheduledPlaces
+    unscheduled_places: unscheduledTripPlaces(items, tripPlaces)
   };
 }
 

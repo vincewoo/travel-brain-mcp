@@ -9,6 +9,10 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   base: "/app/",
   plugins: [react()],
+  // The app imports `ui/shared` and the server's `src/trip-clock.mjs` by relative path, both of
+  // which sit above this project. `vite build` resolves them either way; the dev server refuses to
+  // serve anything outside its allow list, so the repository root goes on it.
+  server: { fs: { allow: ["../../.."] } },
   build: {
     outDir: "dist",
     emptyOutDir: true,

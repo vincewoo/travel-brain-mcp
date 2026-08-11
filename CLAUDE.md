@@ -82,10 +82,17 @@ reachable from an unauthenticated route.
   models. This is where behavior lives.
 - `instants.mjs` — timestamp discipline (see below).
 - `trip-clock.mjs` — pure derivations over trip rows: local day/time in a zone, timeline ordering,
-  now/next/then, overlap issues, research freshness, haversine. No Supabase, no config, `Intl` and
-  `Date` only, so it runs in Node and in a browser. `db.mjs` and the companion PWA import the same
-  file; `trip-clock.d.mts` types it for the TypeScript app. Put a new derivation here rather than
-  inline in a read model if the companion also needs to compute it offline.
+  now/next/then, overlap issues, the whole plan-overview issue set (`planIssues`) and day grouping
+  (`planDays`), research freshness, haversine. No Supabase, no config, `Intl` and `Date` only, so it
+  runs in Node and in a browser. `db.mjs` and the companion PWA import the same file;
+  `trip-clock.d.mts` types it for the TypeScript app. Put a new derivation here rather than inline
+  in a read model if the companion also needs to compute it offline.
+- `ui/shared/` — what the two front ends have in common, imported by both npm projects:
+  `travel-brain.css` (the palette, type ramp, and the container/row/status vocabulary),
+  `format.ts` (zone-aware time and date labels, flexibility and status tones), and `timeline.ts`
+  (where an alert sits in a day). Sizing is tokenised so the dashboard can stay pointer-sized while
+  the companion goes thumb-sized without either forking the design. A visual change belongs here
+  unless it is genuinely particular to one surface.
 - `companion-app.mjs` — serves the built companion PWA at `/app` (static shell plus an SPA fallback
   so `/app/callback` can finish the OAuth exchange).
 - `dashboard-ui.mjs` — registers the `show_travel_dashboard` tool plus the `ui://travel-brain/
@@ -124,8 +131,15 @@ commits are idempotent.
 `ui/travel-companion` is an installable offline app served at `/app` on the same origin as `/mcp`,
 for the parts of a trip with no usable connection and therefore no Claude. It reads through one
 tool, `get_offline_snapshot` (a whole trip in one round trip, rows rather than derived day views),
-stores those rows in IndexedDB, and recomputes Today/nearby on the device via `trip-clock.mjs`.
-Caching a derived `get_today` instead would be wrong once local midnight passes.
+stores those rows in IndexedDB, and recomputes Today/plan/nearby on the device via
+`trip-clock.mjs`. Caching a derived `get_today` instead would be wrong once local midnight passes.
+
+It is the same product as the dashboard and has to look like it: both draw on `ui/shared/`, so a
+row, a status dot, a time label, and an empty state read the same on both surfaces. The companion
+mirrors the dashboard's views (Now/Today, Plan, Places, Journal with recommendations) and adds the
+offline reference sheet the dashboard has no reason to carry — local-script addresses,
+confirmation codes, straight-line distance. What it must never mirror is the dashboard's writes:
+every "Mark done", "Skip" and "Ask Claude" affordance stays out until the Phase 2 outbox exists.
 
 It is its own OAuth 2.1 client; the shell is public and holds no trip data. Phase 1 is read-only.
 Phase 2 adds an outbox limited to writes that append or record what already happened — the

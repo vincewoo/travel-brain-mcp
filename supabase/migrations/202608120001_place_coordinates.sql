@@ -27,6 +27,17 @@ alter table public.places
     or coordinate_source in ('provided', 'estimated', 'geocoded')
   );
 
+-- Points that predate this column carry no provenance, and the constraint below would reject them.
+-- They are labelled conservatively rather than optimistically: nothing now distinguishes a
+-- coordinate someone geocoded exactly from one recalled roughly, so calling them `provided` would
+-- assert a precision the data cannot support — the exact failure this column was added to prevent.
+-- `estimated` reads them as approximate, which is also how the companion draws them. Anything later
+-- confirmed can be relabelled with `update_place`.
+update public.places
+   set coordinate_source = 'estimated'
+ where location is not null
+   and coordinate_source is null;
+
 -- A source without a point is a claim about nothing, and a point whose origin is unrecorded is the
 -- ambiguity this column exists to remove. Both are rejected rather than tidied up on read.
 alter table public.places
@@ -40,10 +51,6 @@ alter table public.places
 
 comment on column public.places.coordinate_source is
   'Where location came from: provided (the caller knew it), estimated (recalled by the agent, approximate), geocoded (looked up). Null exactly when location is null.';
-
--- Existing rows all have a null location, so the constraint above is already satisfied and there is
--- nothing to backfill. Stated rather than assumed, because a non-null location with no source would
--- have blocked this migration and is worth knowing about before it runs.
 
 -- The companion reads places through this function, so the source has to travel with the point or
 -- the phone cannot tell the two apart. A function's OUT columns cannot be changed by CREATE OR

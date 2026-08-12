@@ -41,9 +41,27 @@ test('trip_offline_places is dropped before it is recreated carrying the source'
   assert.match(fn, /grant execute on function public\.trip_offline_places\(uuid\) to authenticated, service_role/);
 });
 
-test('the column is added without rewriting rows that already exist', () => {
+test('every point that predates the column is given a conservative source before the constraint', () => {
   assert.match(sql, /add column if not exists coordinate_source text/);
-  // Every existing place has a null location, so the pairing constraint is already satisfied and
-  // there is no backfill. An UPDATE here would be a sign someone had invented coordinates in SQL.
-  assert.equal(/update public\.places set/.test(sql), false);
+
+  // `places` is global, not per-trip: a place saved for any trip can already carry a point. The
+  // first version of this migration assumed otherwise and was rejected in production by
+  // places_coordinate_source_requires_point. The backfill is what makes the constraint addable.
+  const backfill = sql.slice(sql.indexOf('update public.places'), sql.indexOf('drop constraint if exists places_coordinate_source_requires_point'));
+  assert.ok(backfill.includes('update public.places'), 'pre-existing points must be backfilled');
+  assert.match(backfill, /set coordinate_source = 'estimated'/);
+  // Scoped so it can neither invent a source for a place that has no point nor overwrite one that
+  // already has a source.
+  assert.match(backfill, /where location is not null and coordinate_source is null/);
+
+  // Conservative on purpose: the provenance of these points is unrecoverable, and calling them
+  // 'provided' would assert a precision the data cannot support.
+  assert.equal(/set coordinate_source = 'provided'/.test(sql), false);
+});
+
+test('the backfill runs before the constraint that would reject the rows it fixes', () => {
+  const backfillAt = sql.indexOf('update public.places');
+  const constraintAt = sql.indexOf('add constraint places_coordinate_source_requires_point');
+  assert.ok(backfillAt !== -1 && constraintAt !== -1);
+  assert.ok(backfillAt < constraintAt, 'the constraint must be added after the rows are fixed');
 });

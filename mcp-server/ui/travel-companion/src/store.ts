@@ -47,6 +47,10 @@ export const KEY = {
   tokens: "oauth:tokens",
   clientInformation: "oauth:client",
   discovery: "oauth:discovery",
+  // Whether the traveller has agreed to fetch basemap tiles from OpenFreeMap. Kept here rather than
+  // in `sessionStorage` so the answer survives closing the app, and cleared by `forgetDevice` with
+  // everything else — a device that has forgotten the trip should have forgotten this too.
+  mapsEnabled: "maps:enabled",
 } as const;
 
 /**

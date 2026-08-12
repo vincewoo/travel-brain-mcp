@@ -60,6 +60,16 @@ The compensating control is explicit and in the UI: **Sign out and erase from th
 
 The service worker caches only this app's own same-origin `GET` requests. It never caches `/mcp`: a replayed tool response would present a stale itinerary as live, which no cache header could make honest.
 
+### Basemap tiles
+
+Maps are the one feature that reaches an origin other than this server or Supabase. Tiles come from OpenFreeMap (`https://tiles.openfreemap.org`), with no API key and therefore no account identifying the traveller — but the requests themselves disclose which map tiles are being fetched, which is to say which corner of which city is on screen, and by extension roughly where the traveller is and which places they saved. In an app that deliberately keeps no GPS trail, that is worth naming rather than burying.
+
+Three things bound it. Tiles are **opted into once** and never loaded before that: the answer is stored as `maps:enabled` in IndexedDB, revocable on the Card tab, and cleared by **Sign out and erase from this device** with everything else. Nothing is sent to OpenFreeMap except tile coordinates — no trip data, no token, no place names, no query. And with tiles off or the device offline, maps still draw from coordinates already on the phone, so declining costs the basemap and nothing else.
+
+Tiles are never cached: the service worker's cross-origin passthrough already ensures this, which is also what keeps the "no offline tiles" boundary in `docs/companion-pwa.md` true.
+
+`/app` ships no `Content-Security-Policy` today. When one is added — `docs/companion-pwa.md` intends a strict one, and `src/oauth-consent.mjs` is the model — maps require `connect-src https://tiles.openfreemap.org` (style and vector tiles are fetched with `fetch`, not as images) plus `worker-src blob:` and `script-src blob:`, because MapLibre creates its tile-decoding worker from a blob URL. A policy written without these will break maps silently, in the field, offline-looking rather than blocked-looking.
+
 ## Secret handling
 
 Never commit or bake these values into an image:

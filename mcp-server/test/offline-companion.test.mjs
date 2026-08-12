@@ -10,6 +10,8 @@ import {
 } from '../src/db.mjs';
 import { createScriptedSupabase } from './support/scripted-supabase.mjs';
 import {
+  bearingDegrees,
+  geoBounds,
   haversineMeters,
   localDateTime,
   planDays,
@@ -381,4 +383,46 @@ test('offline distances are straight-line metres from the same coordinates the s
   assert.ok(distance > 2_900 && distance < 3_300, `unexpected distance ${distance}`);
   assert.equal(haversineMeters(peak, { latitude: null, longitude: null }), null);
   assert.equal(haversineMeters(null, ferry), null);
+});
+
+test('the bounds a map is drawn in skip places that were never geocoded', () => {
+  const peak = { latitude: 22.2759, longitude: 114.145 };
+  const ferry = { latitude: 22.2937, longitude: 114.1685 };
+  const ungeocoded = { latitude: null, longitude: null };
+
+  const bounds = geoBounds([peak, ungeocoded, ferry]);
+  assert.equal(bounds.count, 2, 'the ungeocoded place is not a point on the map');
+  assert.equal(bounds.south, 22.2759);
+  assert.equal(bounds.north, 22.2937);
+  assert.equal(bounds.west, 114.145);
+  assert.equal(bounds.east, 114.1685);
+  // The centre is the middle of the box, which is what a map fits itself to.
+  assert.ok(Math.abs(bounds.center.latitude - 22.2848) < 1e-6);
+  assert.ok(Math.abs(bounds.center.longitude - 114.15675) < 1e-6);
+
+  // A single point still has a box, so a one-place map has something to centre on.
+  assert.deepEqual(geoBounds([peak]).center, { latitude: 22.2759, longitude: 114.145 });
+  // Nothing mappable is null, not a box around (0, 0) in the Gulf of Guinea.
+  assert.equal(geoBounds([ungeocoded]), null);
+  assert.equal(geoBounds([]), null);
+  assert.equal(geoBounds(null), null);
+});
+
+test('bearing points the way the traveller has to walk, clockwise from north', () => {
+  const peak = { latitude: 22.2759, longitude: 114.145 };
+  const ferry = { latitude: 22.2937, longitude: 114.1685 };
+  // The ferry pier is north-east of the Peak, so the bearing sits in the first quadrant.
+  const bearing = bearingDegrees(peak, ferry);
+  assert.ok(bearing > 0 && bearing < 90, `unexpected bearing ${bearing}`);
+  // Straight up the same meridian is due north exactly.
+  assert.ok(Math.abs(bearingDegrees(peak, { latitude: 23, longitude: 114.145 })) < 1e-6);
+  // Due east is not 90°: a great circle out of the northern hemisphere bows poleward, so the
+  // heading starts a fraction north of east and comes back. Pinned because rounding it to 90 would
+  // mean someone had quietly replaced this with flat trigonometry.
+  const east = bearingDegrees(peak, { latitude: 22.2759, longitude: 115 });
+  assert.ok(east > 89.5 && east < 90, `unexpected due-east bearing ${east}`);
+  // Reversing the journey turns you round, give or take that same convergence.
+  assert.ok(Math.abs(((bearingDegrees(ferry, peak) - bearing) + 360) % 360 - 180) < 0.1);
+  assert.equal(bearingDegrees(peak, { latitude: null, longitude: null }), null);
+  assert.equal(bearingDegrees(null, ferry), null);
 });

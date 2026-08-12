@@ -21,12 +21,12 @@ import {
   sync,
   UnauthorizedError,
 } from "./mcp";
-import { forgetDevice } from "./store";
+import { forgetDevice, KEY, readValue, writeValue } from "./store";
 import type { Snapshot, Tab } from "./types";
 import { CardView } from "./views/Card";
 import { JournalView } from "./views/Journal";
 import { NowView } from "./views/Now";
-import { PlacesView, type PlaceFilter, type PlaceGrouping } from "./views/Places";
+import { PlacesView, type PlaceFilter, type PlaceGrouping, type PlacesMode } from "./views/Places";
 import { PlanView } from "./views/Plan";
 
 const TABS: { key: Tab; label: string }[] = [
@@ -71,6 +71,10 @@ export default function App() {
   const [placeFilter, setPlaceFilter] = useState<PlaceFilter>("all");
   const [group, setGroup] = useState<PlaceGrouping>("category");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [placesMode, setPlacesMode] = useState<PlacesMode>("list");
+  // Consent to fetch basemap tiles. Starts false on every boot and is corrected from IndexedDB
+  // below, so a map never loads tiles before the stored answer has been read.
+  const [mapsEnabled, setMapsEnabled] = useState(false);
 
   const refresh = useCallback(async (tripId?: string) => {
     setSyncing(true);
@@ -112,6 +116,7 @@ export default function App() {
         setSnapshot(cached.snapshot);
         setSyncedAt(cached.syncedAt);
       }
+      setMapsEnabled((await readValue<boolean>(KEY.mapsEnabled)) === true);
       setLoading(false);
       setInstallHint(!isStandalone());
       if (navigator.onLine) await refresh();
@@ -178,6 +183,14 @@ export default function App() {
   useEffect(() => {
     if (snapshot && !selectedDate) setSelectedDate(here.localDate);
   }, [snapshot, selectedDate, here.localDate]);
+
+  // Asked once, in `MapPanel`, and remembered. Writing through to IndexedDB rather than keeping it
+  // in state alone is the point: being asked again on every launch would train the traveller to tap
+  // yes without reading it.
+  const enableMaps = () => {
+    setMapsEnabled(true);
+    void writeValue(KEY.mapsEnabled, true);
+  };
 
   const locate = () => {
     navigator.geolocation?.getCurrentPosition(
@@ -306,6 +319,10 @@ export default function App() {
             nearby={nearby}
             issues={todayIssues}
             clock={clock}
+            origin={origin}
+            offline={!online}
+            mapsEnabled={mapsEnabled}
+            onEnableMaps={enableMaps}
           />
         ) : null}
         {tab === "plan" ? (
@@ -331,6 +348,12 @@ export default function App() {
             status={placeFilter}
             group={group}
             openGroups={openGroups}
+            origin={origin}
+            mode={placesMode}
+            offline={!online}
+            mapsEnabled={mapsEnabled}
+            onMode={setPlacesMode}
+            onEnableMaps={enableMaps}
             onQuery={setQuery}
             onCity={setCity}
             onStatus={setPlaceFilter}
@@ -352,6 +375,14 @@ export default function App() {
           <CardView
             snapshot={snapshot}
             places={places}
+            origin={origin}
+            offline={!online}
+            mapsEnabled={mapsEnabled}
+            onEnableMaps={enableMaps}
+            onDisableMaps={() => {
+              setMapsEnabled(false);
+              void writeValue(KEY.mapsEnabled, false);
+            }}
             onForget={() => {
               void forgetDevice().then(() => location.reload());
             }}

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.0.0",
+    "maplibre-gl": "^6.3.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

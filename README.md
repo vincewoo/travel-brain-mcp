@@ -156,6 +156,12 @@ one trip through `get_offline_snapshot` and renders Now, Plan, Places, and a ref
 connection at all. Design and rationale are in `docs/companion-pwa.md`; the device-side exposure is
 in `docs/security.md`.
 
+Maps are included and work offline in the only way an offline map honestly can. With a connection,
+and once the traveller has said yes to it, the basemap is OpenFreeMap — no API key or account to
+configure, so there is nothing here for an operator to set up. Without one, the same panels draw
+positions, distances and bearings from the coordinates already cached on the phone. Basemap tiles
+can be turned back off on the Card tab.
+
 Same origin is deliberate: no CORS, no extra `ALLOWED_ORIGINS` entry, a service-worker scope that
 covers the app and nothing else, and a fixed place for the OAuth redirect to land.
 

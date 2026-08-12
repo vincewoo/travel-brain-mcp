@@ -1,10 +1,12 @@
-import { useMemo } from "react";
-import { PlaceRow } from "../components/rows";
+import { useMemo, useState } from "react";
+import { MapPanel } from "../components/MapPanel";
+import { MapLinks, PlaceRow } from "../components/rows";
 import { BlankSlate } from "../components/states";
-import { humanize, joinMeta, sentence } from "../../../shared/format";
+import { humanize, joinMeta, placeStatus, sentence } from "../../../shared/format";
 import type { PlaceCard } from "../derive";
 import { searchCards } from "../derive";
-import { localAddress, mapLink } from "../format";
+import { localAddress } from "../format";
+import type { Origin } from "../types";
 
 /**
  * Everything saved for the trip, filtered on the phone — no server round trip to search.
@@ -18,6 +20,7 @@ import { localAddress, mapLink } from "../format";
 export const PLACE_STATUSES = ["shortlist", "planned", "visited", "rejected"] as const;
 export type PlaceFilter = "all" | (typeof PLACE_STATUSES)[number];
 export type PlaceGrouping = "category" | "locality" | "status" | "none";
+export type PlacesMode = "list" | "map";
 
 const GROUPINGS: { key: PlaceGrouping; label: string }[] = [
   { key: "category", label: "Category" },
@@ -35,6 +38,12 @@ interface Props {
   status: PlaceFilter;
   group: PlaceGrouping;
   openGroups: Record<string, boolean>;
+  origin: Origin | null;
+  mode: PlacesMode;
+  offline: boolean;
+  mapsEnabled: boolean;
+  onMode: (value: PlacesMode) => void;
+  onEnableMaps: () => void;
   onQuery: (value: string) => void;
   onCity: (value: string) => void;
   onStatus: (value: PlaceFilter) => void;
@@ -46,7 +55,7 @@ interface Props {
 /** Visited is a recorded visit or the trip status saying so — the two do not always agree yet. */
 const statusOf = (card: PlaceCard) => (card.visit ? "visited" : card.tripStatus || "shortlist");
 
-export function PlacesView({ cards, query, city, status, group, openGroups, onQuery, onCity, onStatus, onGroup, onToggleGroup, onClear }: Props) {
+export function PlacesView({ cards, query, city, status, group, openGroups, origin, mode, offline, mapsEnabled, onMode, onEnableMaps, onQuery, onCity, onStatus, onGroup, onToggleGroup, onClear }: Props) {
   const model = useMemo(() => {
     const searched = searchCards(cards, query);
     // Counts are scope-aware: a chip never offers a filter that would return nothing.
@@ -91,8 +100,24 @@ export function PlacesView({ cards, query, city, status, group, openGroups, onQu
     };
   }, [cards, query, city, status, group]);
 
+  // Which pin the traveller last tapped. Transient presentation state, deliberately not persisted:
+  // it means "the one I am looking at", not a selection the trip should remember.
+  const [picked, setPicked] = useState<string | null>(null);
+
   const filtered = Boolean(query) || city !== "all" || status !== "all";
   const unscheduled = cards.filter((card) => !card.scheduled && statusOf(card) === "shortlist").length;
+
+  // The map draws exactly what the list would: search, area and status chips all still apply, so
+  // the two modes never disagree about what is on screen.
+  const pins = model.visible.map((card) => ({
+    id: card.place.id,
+    label: card.place.name,
+    latitude: card.place.latitude,
+    longitude: card.place.longitude,
+    tone: placeStatus(card.tripStatus, card.researchFreshness).dot,
+    muted: statusOf(card) === "rejected",
+  }));
+  const pickedCard = model.visible.find((card) => card.place.id === picked) ?? null;
 
   if (!cards.length) return <div className="view">
     <BlankSlate title="No places saved yet" detail="Places Claude saves for this trip arrive with the next sync." />
@@ -103,6 +128,15 @@ export function PlacesView({ cards, query, city, status, group, openGroups, onQu
       <div>
         <h2>Places</h2>
         <span className="view-count">{joinMeta(`${cards.length} saved`, `${unscheduled} unscheduled`)}</span>
+      </div>
+      <div className="segments" role="group" aria-label="Show places as">
+        {(["list", "map"] as PlacesMode[]).map((option) => <button
+          key={option}
+          type="button"
+          className={`seg${mode === option ? " active" : ""}`}
+          aria-pressed={mode === option}
+          onClick={() => onMode(option)}
+        >{humanize(option)}</button>)}
       </div>
     </div>
 
@@ -126,7 +160,8 @@ export function PlacesView({ cards, query, city, status, group, openGroups, onQu
       >{chip.label} {chip.count}</button>)}
     </div>
 
-    <div className="group-row">
+    {/* Grouping is a property of the list. On the map, geography does the grouping. */}
+    {mode === "list" ? <div className="group-row">
       <div>
         <label id="group-by-label">Group by</label>
         <div className="segments" role="group" aria-labelledby="group-by-label">
@@ -140,9 +175,34 @@ export function PlacesView({ cards, query, city, status, group, openGroups, onQu
         </div>
       </div>
       {filtered ? <button type="button" className="link-button" onClick={onClear}>Clear filters</button> : null}
-    </div>
+    </div> : filtered ? <div className="group-row">
+      <button type="button" className="link-button" onClick={onClear}>Clear filters</button>
+    </div> : null}
 
-    {model.visible.length ? model.groups.map((entry) => {
+    {mode === "map" && model.visible.length ? <section className="container">
+      <MapPanel
+        points={pins}
+        total={model.visible.length}
+        origin={origin}
+        height={320}
+        offline={offline}
+        enabled={mapsEnabled}
+        onEnable={onEnableMaps}
+        onSelect={setPicked}
+      />
+      {/* Tapping a pin opens the row that is already the answer everywhere else in this app,
+          rather than a second, map-only way of describing a place. */}
+      {pickedCard ? <PlaceRow card={pickedCard}>
+        <div className="detail">
+          {pickedCard.place.address ? <div className="address">{pickedCard.place.address}</div> : null}
+          {localAddress(pickedCard.place.metadata) ? <div className="address-local">{localAddress(pickedCard.place.metadata)}</div> : null}
+          {pickedCard.visit?.notes ? <div className="notes">Visit · {pickedCard.visit.notes}</div> : null}
+          <MapLinks place={pickedCard.place} origin={origin ?? undefined} />
+        </div>
+      </PlaceRow> : <p className="footnote">Tap a pin to see the place.</p>}
+    </section> : null}
+
+    {mode === "list" && model.visible.length ? model.groups.map((entry) => {
       const open = openGroups[entry.label] !== false;
       return <section className="container" key={entry.label || "all"}>
         {group === "none" ? null : <button type="button" className="container-head sunken" aria-expanded={open} onClick={() => onToggleGroup(entry.label)}>
@@ -151,7 +211,6 @@ export function PlacesView({ cards, query, city, status, group, openGroups, onQu
         </button>}
         {open || group === "none" ? entry.items.map((card) => {
           const local = localAddress(card.place.metadata);
-          const link = mapLink(card.place);
           return <PlaceRow card={card} key={card.place.id}>
             <div className="detail">
               {card.place.address ? <div className="address">{card.place.address}</div> : null}
@@ -163,12 +222,15 @@ export function PlacesView({ cards, query, city, status, group, openGroups, onQu
               {card.research.slice(0, 2).map((entry) => <div className="notes" key={entry.id}>
                 <strong>{entry.topic}:</strong> {entry.summary ?? entry.finding}
               </div>)}
-              {link ? <a className="link" href={link}>Open in maps</a> : null}
+              <MapLinks place={card.place} origin={origin ?? undefined} />
             </div>
           </PlaceRow>;
         }) : null}
       </section>;
-    }) : <div className="blank-slate centred">
+    }) : null}
+
+    {/* One empty state for both modes: an empty map and an empty list are the same fact. */}
+    {model.visible.length ? null : <div className="blank-slate centred">
       <strong>{query ? `Nothing matches “${query}”` : "Nothing matches these filters"}</strong>
       <p>Search covers name, category, area and your notes.</p>
       <button type="button" className="button" onClick={onClear}>Clear filters</button>

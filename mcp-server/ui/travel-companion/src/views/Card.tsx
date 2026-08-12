@@ -1,17 +1,31 @@
+import { MapPanel } from "../components/MapPanel";
 import { NoteEmpty } from "../components/states";
 import { dateLabel, dateTimeLabel, humanize, joinMeta, plural, zoneLabel } from "../../../shared/format";
+import { MapLinks } from "../components/rows";
 import { referenceCards } from "../derive";
-import { localAddress, mapLink } from "../format";
-import type { Place, Snapshot } from "../types";
+import { localAddress } from "../format";
+import type { Origin, Place, Snapshot } from "../types";
+
+/**
+ * How many lodging addresses get a real map. A tile map holds a WebGL context and browsers cap how
+ * many can exist at once, so the number on screen has to stay countable — everything past this
+ * still gets its address, its local-script address and its links.
+ */
+const MAPPED_LODGING = 3;
 
 /**
  * The reference sheet: what you have to produce at a counter, and where you sleep tonight.
  * Confirmation codes are set large because they get read aloud and typed into other people's
  * terminals; lodging addresses carry their local-script form for the same reason.
  */
-export function CardView({ snapshot, places, onForget }: {
+export function CardView({ snapshot, places, origin, offline, mapsEnabled, onEnableMaps, onDisableMaps, onForget }: {
   snapshot: Snapshot;
   places: Map<string, Place>;
+  origin: Origin | null;
+  offline: boolean;
+  mapsEnabled: boolean;
+  onEnableMaps: () => void;
+  onDisableMaps: () => void;
   onForget: () => void;
 }) {
   const zone = snapshot.trip.timezone;
@@ -21,11 +35,10 @@ export function CardView({ snapshot, places, onForget }: {
   const address = (place: Place | undefined) => {
     if (!place) return null;
     const local = localAddress(place.metadata);
-    const link = mapLink(place);
     return <div className="detail">
       {place.address ? <div className="address">{place.address}</div> : null}
       {local ? <div className="address-local">{local}</div> : null}
-      {link ? <a className="link" href={link}>Open in maps</a> : null}
+      <MapLinks place={place} origin={origin ?? undefined} />
     </div>;
   };
 
@@ -50,8 +63,17 @@ export function CardView({ snapshot, places, onForget }: {
 
     {lodging.length ? <section className="container">
       <div className="container-head"><strong>Staying</strong><span>{plural(lodging.length, "address")}</span></div>
-      {lodging.map((place) => <article className="row" key={place.id}>
+      {lodging.map((place, order) => <article className="row" key={place.id}>
         <div className="row-title-line"><strong>{place.name}</strong></div>
+        {order < MAPPED_LODGING ? <MapPanel
+          points={[{ id: place.id, label: place.name, latitude: place.latitude, longitude: place.longitude }]}
+          origin={origin}
+          height={160}
+          interactive={false}
+          offline={offline}
+          enabled={mapsEnabled}
+          onEnable={onEnableMaps}
+        /> : null}
         {address(place)}
       </article>)}
     </section> : null}
@@ -93,6 +115,18 @@ export function CardView({ snapshot, places, onForget }: {
 
     <section className="container">
       <div className="container-head"><strong>This device</strong></div>
+      <div className="row">
+        <p className="row-meta">
+          Basemap tiles come from OpenFreeMap. Loading them tells it which area you are looking at;
+          with them off, maps still draw every position and distance from what is already on the
+          phone.
+        </p>
+        <div className="row-actions">
+          {mapsEnabled
+            ? <button type="button" className="link-button quiet" onClick={onDisableMaps}>Turn off basemap tiles</button>
+            : <button type="button" className="link-button" onClick={onEnableMaps}>Turn on basemap tiles</button>}
+        </div>
+      </div>
       <div className="row">
         <p className="row-meta">
           The whole trip, including journal notes, is stored on this phone so it works offline.

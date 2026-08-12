@@ -11,8 +11,8 @@ import {
   timeLabel,
 } from "../../../shared/format";
 import type { PlaceCard } from "../derive";
-import { distanceLabel, localAddress, mapLink } from "../format";
-import type { ClockIssue, ItineraryItem, Place, Reservation } from "../types";
+import { distanceLabel, localAddress, mapDirectionsLink, mapSearchLink } from "../format";
+import type { ClockIssue, ItineraryItem, Origin, Place, Reservation } from "../types";
 
 /**
  * The same rows the dashboard draws, minus the writes.
@@ -23,14 +23,31 @@ import type { ClockIssue, ItineraryItem, Place, Reservation } from "../types";
  * in local script, the confirmation code, the straight-line distance.
  */
 
+/**
+ * The way out to a real map app, for the things this app deliberately does not do: routing, live
+ * transit, street view, a search for something nobody saved.
+ */
+export function MapLinks({ place, origin }: { place: Place; origin?: Origin }) {
+  const directions = mapDirectionsLink(place, origin);
+  const search = mapSearchLink(place);
+  if (!directions && !search) return null;
+  return <div className="map-links">
+    {directions ? <a className="link" href={directions} target="_blank" rel="noreferrer">Directions</a> : null}
+    {search ? <a className="link" href={search} target="_blank" rel="noreferrer">Open in Google Maps</a> : null}
+  </div>;
+}
+
 /** Address, local-script address, reservation code, notes: what you show someone, offline. */
-export function PlaceDetail({ place, notes, reservations }: {
+export function PlaceDetail({ place, notes, reservations, origin, map }: {
   place?: Place;
   notes?: string | null;
   reservations?: Reservation[];
+  origin?: Origin;
+  /** A map for this one place. Passed in rather than mounted here — see `MapPanel` on why the
+   *  number of live tile maps has to stay countable. */
+  map?: ReactNode;
 }) {
   const local = place ? localAddress(place.metadata) : null;
-  const link = place ? mapLink(place) : null;
   if (!place && !notes && !reservations?.length) return null;
   return <div className="detail">
     {place?.address ? <div className="address">{place.address}</div> : null}
@@ -40,11 +57,12 @@ export function PlaceDetail({ place, notes, reservations }: {
       {reservation.confirmation_code ? <div className="code">{reservation.confirmation_code}</div> : null}
     </div>)}
     {notes ? <div className="notes">{notes}</div> : null}
-    {link ? <a className="link" href={link}>Open in maps</a> : null}
+    {map}
+    {place ? <MapLinks place={place} origin={origin} /> : null}
   </div>;
 }
 
-export function TimelineRow({ item, zone, current, place, reservations, detailed }: {
+export function TimelineRow({ item, zone, current, place, reservations, detailed, origin, map }: {
   item: ItineraryItem;
   zone: string;
   current?: boolean;
@@ -52,6 +70,8 @@ export function TimelineRow({ item, zone, current, place, reservations, detailed
   reservations?: Reservation[];
   /** The day view carries the address and code inline; the Now tab shows them once, up top. */
   detailed?: boolean;
+  origin?: Origin;
+  map?: ReactNode;
 }) {
   const done = item.status === "completed";
   const skipped = ["skipped", "cancelled"].includes(item.status);
@@ -81,7 +101,7 @@ export function TimelineRow({ item, zone, current, place, reservations, detailed
         );
         return meta ? <p className="row-meta">{meta}</p> : null;
       })()}
-      {detailed ? <PlaceDetail place={place} notes={item.notes} reservations={reservations} /> : null}
+      {detailed ? <PlaceDetail place={place} notes={item.notes} reservations={reservations} origin={origin} map={map} /> : null}
     </div>
   </article>;
 }

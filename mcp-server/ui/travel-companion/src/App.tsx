@@ -23,6 +23,7 @@ import {
   updateTripTask,
 } from "./mcp";
 import { forgetDevice, KEY, readValue, writeValue } from "./store";
+import { applyTheme, readTheme, storeTheme, watchSystemTheme, type ThemeChoice } from "./theme";
 import type { Snapshot, Tab, TripTask } from "./types";
 import { CardView } from "./views/Card";
 import { JournalView } from "./views/Journal";
@@ -86,6 +87,9 @@ export default function App() {
   // Consent to fetch basemap tiles. Starts false on every boot and is corrected from IndexedDB
   // below, so a map never loads tiles before the stored answer has been read.
   const [mapsEnabled, setMapsEnabled] = useState(false);
+  // Appearance, read synchronously because the inline script in `index.html` has already applied it
+  // — this is the same answer, in a form React can render the Card tab's control from.
+  const [theme, setTheme] = useState<ThemeChoice>(readTheme);
 
   const refresh = useCallback(async (tripId?: string) => {
     setSyncing(true);
@@ -159,6 +163,13 @@ export default function App() {
     };
   }, [refresh]);
 
+  // Re-applied on every change rather than only on the traveller's tap, so a phone that flips to
+  // dark at sunset carries the status bar with it while the choice is still "System".
+  useEffect(() => {
+    applyTheme(theme);
+    return theme === "system" ? watchSystemTheme(() => applyTheme("system")) : undefined;
+  }, [theme]);
+
   const days = useMemo(() => (snapshot ? tripDays(snapshot) : []), [snapshot]);
   // Hooks run before the "no snapshot yet" return below, so these have to tolerate an empty cache.
   const here = useMemo(
@@ -201,6 +212,11 @@ export default function App() {
   const enableMaps = () => {
     setMapsEnabled(true);
     void writeValue(KEY.mapsEnabled, true);
+  };
+
+  const chooseTheme = (choice: ThemeChoice) => {
+    setTheme(choice);
+    storeTheme(choice);
   };
 
   const locate = () => {
@@ -415,6 +431,8 @@ export default function App() {
             origin={origin}
             offline={!online}
             mapsEnabled={mapsEnabled}
+            theme={theme}
+            onTheme={chooseTheme}
             onEnableMaps={enableMaps}
             onDisableMaps={() => {
               setMapsEnabled(false);

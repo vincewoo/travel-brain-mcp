@@ -93,7 +93,10 @@ reachable from an unauthenticated route.
   `format.ts` (zone-aware time and date labels, flexibility and status tones), and `timeline.ts`
   (where an alert sits in a day). Sizing is tokenised so the dashboard can stay pointer-sized while
   the companion goes thumb-sized without either forking the design. A visual change belongs here
-  unless it is genuinely particular to one surface.
+  unless it is genuinely particular to one surface. The dark palette is stated twice — once for
+  `prefers-color-scheme: dark`, once for the `[data-theme="dark"]` the companion's appearance
+  control sets — because CSS cannot share a declaration block between a media query and a selector;
+  `test/companion-theme.test.mjs` fails if the two drift apart.
 - `companion-app.mjs` — serves the built companion PWA at `/app` (static shell plus an SPA fallback
   so `/app/callback` can finish the OAuth exchange).
 - `dashboard-ui.mjs` — registers the `show_travel_dashboard` tool plus the `ui://travel-brain/

@@ -4,6 +4,7 @@ import { dateLabel, dateTimeLabel, humanize, joinMeta, plural, zoneLabel } from 
 import { MapLinks } from "../components/rows";
 import { referenceCards } from "../derive";
 import { localAddress } from "../format";
+import { THEME_CHOICES, type ThemeChoice } from "../theme";
 import type { Origin, Place, Snapshot } from "../types";
 
 /**
@@ -18,12 +19,14 @@ const MAPPED_LODGING = 3;
  * Confirmation codes are set large because they get read aloud and typed into other people's
  * terminals; lodging addresses carry their local-script form for the same reason.
  */
-export function CardView({ snapshot, places, origin, offline, mapsEnabled, onEnableMaps, onDisableMaps, onForget }: {
+export function CardView({ snapshot, places, origin, offline, mapsEnabled, theme, onTheme, onEnableMaps, onDisableMaps, onForget }: {
   snapshot: Snapshot;
   places: Map<string, Place>;
   origin: Origin | null;
   offline: boolean;
   mapsEnabled: boolean;
+  theme: ThemeChoice;
+  onTheme: (choice: ThemeChoice) => void;
   onEnableMaps: () => void;
   onDisableMaps: () => void;
   onForget: () => void;
@@ -121,6 +124,23 @@ export function CardView({ snapshot, places, origin, offline, mapsEnabled, onEna
 
     <section className="container">
       <div className="container-head"><strong>This device</strong></div>
+      <div className="row">
+        <p className="row-meta">
+          Appearance follows the phone unless you say otherwise — worth overriding on a night train,
+          or in sun bright enough that dark text on white is the only thing still readable.
+        </p>
+        <div className="row-actions">
+          <div className="button-row" role="group" aria-label="Appearance">
+            {THEME_CHOICES.map((choice) => <button
+              key={choice.key}
+              type="button"
+              className={`seg${theme === choice.key ? " active" : ""}`}
+              aria-pressed={theme === choice.key}
+              onClick={() => onTheme(choice.key)}
+            >{choice.label}</button>)}
+          </div>
+        </div>
+      </div>
       <div className="row">
         <p className="row-meta">
           Basemap tiles come from OpenFreeMap. Loading them tells it which area you are looking at;

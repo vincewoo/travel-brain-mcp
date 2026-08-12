@@ -50,8 +50,27 @@
   color: var(--text);
 }
 
+/*
+ * Dark.
+ *
+ * There are two ways to ask for it. The system setting is one, and the only one the dashboard has:
+ * inside a Claude host the palette is the host's business. The other is the traveller saying so on
+ * the companion's Card tab, which is a standalone app on a phone and the one surface where a night
+ * bus and a daylit platform are the same device an hour apart.
+ *
+ * An explicit choice wins in both directions, which is what the two selectors below encode: the
+ * system rule steps aside when the traveller has asked for light, and the attribute rule carries no
+ * media query at all so it can hold dark on a phone set to light. `color-scheme` moves with the
+ * choice further down, so the checkboxes, scrollbars and form controls the browser draws itself
+ * follow the page instead of staying light on top of it.
+ *
+ * The two blocks are one palette written twice, because CSS has no way to share a declaration block
+ * between a media query and a selector. `test/companion-theme.test.mjs` asserts they are identical,
+ * so a token added to one and forgotten in the other fails the build rather than shipping a theme
+ * that is only half dark.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --text: var(--color-text-primary, #f1f0e9);
     --muted: var(--color-text-secondary, #a9aaa2);
     --faint: var(--color-text-tertiary, #8d8f87);
@@ -71,6 +90,32 @@
     --strike: rgba(241, 240, 233, .35);
   }
 }
+
+:root[data-theme="dark"] {
+  --text: var(--color-text-primary, #f1f0e9);
+  --muted: var(--color-text-secondary, #a9aaa2);
+  --faint: var(--color-text-tertiary, #8d8f87);
+  --surface: var(--color-background-primary, #252620);
+  --surface-page: var(--color-background-primary, #20211e);
+  --surface-sunken: var(--color-background-secondary, #2b2c27);
+  --border: var(--color-border-tertiary, rgba(255, 255, 255, .12));
+  --border-inner: var(--color-border-tertiary, rgba(255, 255, 255, .09));
+  --border-strong: var(--color-border-secondary, rgba(255, 255, 255, .22));
+  --ink: var(--color-background-inverse, #f1f0e9);
+  --ink-text: var(--color-text-inverse, #20211d);
+  --danger: #e0a89f; --danger-bg: #33241f; --danger-edge: rgba(224, 168, 159, .26); --danger-badge: #3c2926;
+  --warning: #e3c68a; --warning-bg: #322b1c; --warning-edge: rgba(227, 198, 138, .26);
+  --info: #a8c8d8; --info-bg: #26333a; --info-edge: rgba(168, 200, 216, .26);
+  --ok: #bee0c4;
+  --skeleton: rgba(255, 255, 255, .11); --skeleton-soft: rgba(255, 255, 255, .07);
+  --strike: rgba(241, 240, 233, .35);
+}
+
+/* Told to the browser as well as to the palette: a checkbox, a scrollbar or a date picker drawn by
+   the platform reads `color-scheme` and nothing else, and a light one on a dark page is the tell
+   that a theme was painted on rather than chosen. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 html, body, #root { min-width: 0; margin: 0; }

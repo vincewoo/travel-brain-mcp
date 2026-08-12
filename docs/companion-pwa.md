@@ -215,7 +215,8 @@ Five tabs. It should feel like a boarding pass, not a workspace.
 4. **Journal** — raw notes verbatim with their reaction and visit context, then recommendations
    split firsthand / mixed evidence / research only.
 5. **Card** — the reference sheet: where you are staying, every reservation and its code,
-   dietary constraints, and the lessons this trip has already taught. Plus Forget this device.
+   dietary constraints, and the lessons this trip has already taught. Plus the device settings:
+   appearance, basemap tiles, and Forget this device.
 
 Capture — one large text box → journal note, optionally attached to the current item or place,
 optionally with GPS, plus rate-the-place-I-just-left — is Phase 2 and is not built. Until it is,
@@ -238,6 +239,21 @@ a page as long as the trip and a bar that scrolled away with it would be a bar y
 for; the dashboard's is a panel sized by its host. And the companion adds what only a
 phone needs — an address in local script, a confirmation code set large enough to read aloud, a
 straight-line distance.
+
+Light and dark is one more of those real differences. Both surfaces follow the system setting, and
+for the dashboard that is the end of it: it is a panel inside a Claude host, and the palette is the
+host's business. The companion is a standalone app on a phone, where the system setting is usually
+right and occasionally useless — a night bus, a sunlit platform, a screen that has to be readable
+at arm's length — so **Card → Appearance** offers System / Light / Dark, and an explicit choice
+wins over the phone in both directions. What it does not do is fork the palette: the dark tokens
+live in `ui/shared/travel-brain.css` with everything else, stated once for
+`prefers-color-scheme: dark` and once for `[data-theme="dark"]` because CSS cannot share a
+declaration block between a media query and a selector, with `test/companion-theme.test.mjs`
+asserting the two have not drifted apart. `color-scheme` moves with the choice so the checkboxes
+and scrollbars the browser draws itself follow the page, the choice is kept in `localStorage`
+rather than IndexedDB so an inline script in the shell can apply it before the first paint (an
+async read means a white flash on every cold start in a dark room), and `theme-color` is rewritten
+alongside it so the status bar is not the one white rectangle left on screen.
 
 The views themselves are derived the same way rather than reimplemented: `planIssues` and
 `planDays` live in `trip-clock.mjs` alongside the day-grouping helpers, so `get_plan_overview` and
@@ -262,7 +278,8 @@ seven days unless the app is installed. Onboarding has to insist on it.
   operator step, in the root `README.md`.
 - **Phase 1 (offline-read PWA) — done.** `ui/travel-companion`: OAuth via the MCP client SDK,
   snapshot into IndexedDB, Now / Plan / Places / Card, local search, staleness banner, service
-  worker, install hint, erase-from-device, maps (see below), and connected planning-task checkboxes.
+  worker, install hint, erase-from-device, appearance override, maps (see below), and connected
+  planning-task checkboxes.
 - **Phase 2 (capture) — next.** Outbox, the five safe writes, needs-attention list.
 - **Phase 3.** "Ask Claude" handoff, photos into Supabase Storage, pending-proposal display.
 

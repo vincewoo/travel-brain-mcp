@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { companionDirectory, installCompanionRoutes } from '../src/companion-app.mjs';
+import { companionDirectory, installCompanionRoutes, isFileRequest } from '../src/companion-app.mjs';
 
 const distDirectory = fileURLToPath(new URL('../ui/travel-companion/dist/', import.meta.url));
 
@@ -70,4 +70,40 @@ test('the manifest installs to the home screen at the companion scope', async ()
   // browser tab and unused for a week, which would silently empty the offline cache.
   assert.equal(manifest.display, 'standalone');
   assert.ok(manifest.icons.some((icon) => icon.sizes === '512x512'));
+});
+
+test('the map worker survives the build, since the bundler cannot see it', async () => {
+  // MapLibre builds its worker URL at runtime from a computed filename, so Rollup records no
+  // dependency and emits nothing. Every vector tile is fetched and parsed in that worker: without
+  // it the style, the raster backdrop and the pins all still render, and the map quietly has no
+  // map in it. A vite plugin emits both files; this is the assertion that they arrived.
+  const assets = fileURLToPath(new URL('../ui/travel-companion/dist/assets/', import.meta.url));
+  for (const name of ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs']) {
+    const source = await readFile(assets + name, 'utf8');
+    assert.ok(source.length > 1000, `${name} should be the real module`);
+    assert.ok(!source.trimStart().startsWith('<'), `${name} must be JavaScript, not the HTML shell`);
+  }
+  // The worker resolves its sibling relative to itself, so they have to stay side by side.
+  const worker = await readFile(assets + 'maplibre-gl-worker.mjs', 'utf8');
+  assert.match(worker, /from"\.\/maplibre-gl-shared\.mjs"/);
+});
+
+test('a missing file 404s instead of being answered with the shell', () => {
+  // Answering a missing asset with HTML under a 200 is what hid the absent map worker: the browser
+  // cannot use it, the service worker caches it, and nothing reports an error.
+  assert.equal(isFileRequest('/app/assets/maplibre-gl-worker.mjs'), true);
+  assert.equal(isFileRequest('/app/assets/index-abc123.js'), true);
+  assert.equal(isFileRequest('/app/sw.js'), true);
+  assert.equal(isFileRequest('/app/manifest.webmanifest'), true);
+  // Client-side routes are bare words and still resolve to the shell, OAuth callback included.
+  assert.equal(isFileRequest('/app'), false);
+  assert.equal(isFileRequest('/app/'), false);
+  assert.equal(isFileRequest('/app/callback'), false);
+});
+
+test('the worker script is left to the network rather than served from the cache', async () => {
+  const worker = await readFile(new URL('../ui/travel-companion/dist/sw.js', import.meta.url), 'utf8');
+  assert.match(worker, /destination === "worker"/);
+  // The cache name has to move when a poisoned entry needs evicting from installs already out there.
+  assert.match(worker, /travel-companion-v2/);
 });

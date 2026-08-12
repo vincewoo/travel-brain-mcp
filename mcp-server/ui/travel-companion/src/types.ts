@@ -65,6 +65,12 @@ export interface Place {
   country_code: string | null;
   latitude: number | null;
   longitude: number | null;
+  /**
+   * Where the point came from: "provided", "estimated", or "geocoded". Null exactly when there is
+   * no point. An estimate is drawn differently on the map — it is good enough to show which side of
+   * the river something is on, and not good enough to walk the last hundred metres by.
+   */
+  coordinate_source: string | null;
   external_ids: Record<string, string>;
   metadata: Record<string, unknown>;
 }

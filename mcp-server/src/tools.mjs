@@ -24,6 +24,7 @@ import {
   saveResearchFinding,
   searchTravelBrain,
   updateItineraryItem,
+  updatePlace,
   updateCurrentTripState
 } from './db.mjs';
 
@@ -43,6 +44,23 @@ const CLIENT_OP_HINT =
   'Optional caller-generated id for one logical write, stored in metadata. Replaying the same id returns the row the first call created instead of inserting a second one. Offline companion clients should always send it; an interactive agent does not need to.';
 
 const clientOpId = () => z.string().min(8).max(128).optional().describe(CLIENT_OP_HINT);
+
+/**
+ * Coordinates were optional and unmentioned for long enough that nothing ever sent any, and the
+ * companion's maps had nothing to draw. Saying what they are for is most of the fix.
+ *
+ * The other half is the second sentence. A model recalling roughly where a famous landmark sits is
+ * genuinely useful and lands as `estimated`; a model producing a plausible point for "a riverside
+ * fish restaurant, pick one on the day" is inventing a fact, and no map should show it.
+ */
+const COORDINATE_HINT =
+  'Latitude and longitude power the offline maps and nearby search, so send them whenever the place has a real fixed location — approximate coordinates recalled for a well-known landmark are welcome and are stored as "estimated". Leave them off entirely for a place with no single location (a category, an area, or somewhere to be chosen on the day); an invented point becomes a confident pin on a map.';
+
+const COORDINATE_SOURCE_HINT =
+  'Where the coordinates came from: "provided" when the caller knows them exactly, "estimated" when they are recalled or approximate, "geocoded" when looked up. Defaults to "estimated", which is the safe reading of a coordinate a model supplied from memory.';
+
+const coordinateSource = () =>
+  z.enum(['provided', 'estimated', 'geocoded']).optional().describe(COORDINATE_SOURCE_HINT);
 
 const textResult = (data, message = 'Done.') => ({
   structuredContent: data,
@@ -105,7 +123,7 @@ export function registerTools(server, resolveRequestContext) {
 
   server.registerTool('add_place', {
     title: 'Add place',
-    description: 'Save a place to the Travel Brain and optionally associate it with a trip.',
+    description: `Save a place to the Travel Brain and optionally associate it with a trip. ${COORDINATE_HINT}`,
     inputSchema: z.object({
       trip_id: z.string().uuid().optional(),
       name: z.string().min(1),
@@ -115,8 +133,9 @@ export function registerTools(server, resolveRequestContext) {
       locality: z.string().optional(),
       region: z.string().optional(),
       country_code: z.string().max(3).optional(),
-      latitude: z.number().min(-90).max(90).optional(),
-      longitude: z.number().min(-180).max(180).optional(),
+      latitude: z.number().min(-90).max(90).optional().describe(COORDINATE_HINT),
+      longitude: z.number().min(-180).max(180).optional().describe(COORDINATE_HINT),
+      coordinate_source: coordinateSource(),
       trip_status: z.enum(['shortlist', 'planned', 'visited', 'rejected']).default('shortlist'),
       external_ids: z.record(z.string(), z.string()).optional(),
       metadata: z.record(z.string(), z.unknown()).optional(),
@@ -124,6 +143,30 @@ export function registerTools(server, resolveRequestContext) {
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
   }, tool('add_place', async (input, ctx) => textResult({ place: await addPlace(ctx, input) }, 'Place saved.')));
+
+  server.registerTool('update_place', {
+    title: 'Update place',
+    description: `Correct a saved place: its coordinates, address, or other descriptive fields. Use this rather than calling add_place again, which would create a second place. It edits the description of a place, never what happened there — visits, journal entries, and recommendations attached to it are untouched. ${COORDINATE_HINT}`,
+    inputSchema: z.object({
+      place_id: z.string().uuid(),
+      name: z.string().min(1).optional(),
+      normalized_name: z.string().optional(),
+      category: z.string().optional(),
+      address: z.string().optional(),
+      locality: z.string().optional(),
+      region: z.string().optional(),
+      country_code: z.string().max(3).optional(),
+      latitude: z.number().min(-90).max(90).optional().describe(COORDINATE_HINT),
+      longitude: z.number().min(-180).max(180).optional().describe(COORDINATE_HINT),
+      coordinate_source: coordinateSource(),
+      clear_coordinates: z.boolean().optional()
+        .describe('Remove the stored point and its source together. Use when the coordinates are known to be wrong: no point is better than a confident pin in the wrong place.')
+    }),
+    // Idempotent because it sets fields to the values given rather than adjusting them; sending the
+    // same correction twice leaves the same row. Not destructive: it rewrites a description, and
+    // the history pointing at this place survives untouched.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+  }, tool('update_place', async (input, ctx) => textResult({ place: await updatePlace(ctx, input) }, 'Place updated.')));
 
   server.registerTool('add_itinerary_item', {
     title: 'Add itinerary item',

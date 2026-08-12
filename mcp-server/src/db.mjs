@@ -238,6 +238,10 @@ export async function addPlace(ctx, input) {
   };
   if (input.latitude != null && input.longitude != null) {
     record.location = `POINT(${input.longitude} ${input.latitude})`;
+    // A point with no stated source would be indistinguishable from a surveyed one on the map.
+    // `estimated` is the safe default because the common caller is a model recalling roughly where
+    // a landmark is, and overstating that is the failure worth defaulting against.
+    record.coordinate_source = input.coordinate_source ?? 'estimated';
   }
 
   const place = await insertOnce(ctx, 'places', record, input, { created_by: actorId }, 'addPlace');
@@ -251,6 +255,81 @@ export async function addPlace(ctx, input) {
     fail(linkError, 'addPlace trip link');
   }
   return place;
+}
+
+/**
+ * Correct a saved place: where it is, what it is called, how to find it.
+ *
+ * This exists because until now a place could only ever be inserted. A wrong address, a missing
+ * locality, or — the case that surfaced it — an absent point could not be fixed through any tool,
+ * and calling `add_place` again would create a second place rather than repair the first.
+ *
+ * It edits description, never history. A visit, a journal entry, or a recommendation attached to
+ * this place is untouched and stays true: correcting where the restaurant is does not restate what
+ * happened there. Coordinates carry their source, and clearing them clears it too, so the
+ * "point and source travel together" constraint holds from this side as well.
+ */
+export async function updatePlace(ctx, input) {
+  const { supabase, actorId } = ctx;
+  // `location` comes back as unreadable EWKB hex, which is fine: the only question asked of it is
+  // whether there is a point at all.
+  const { data: place, error: readError } = await supabase
+    .from('places')
+    .select('id, created_by, location')
+    .eq('id', input.place_id)
+    .maybeSingle();
+  fail(readError, 'updatePlace lookup');
+  if (!place) throw new Error('Place not found.');
+  // Mirrors the `places_creator_update` RLS policy exactly. In OAuth mode RLS would refuse this
+  // anyway; stating it here is what keeps static mode — where RLS is bypassed — from being the
+  // laxer of the two.
+  if (place.created_by !== actorId) {
+    throw new Error('Only the traveller who saved a place can update it.');
+  }
+
+  const fields = ['name', 'normalized_name', 'category', 'address', 'locality', 'region', 'country_code'];
+  const patch = Object.fromEntries(
+    Object.entries(input).filter(([key, value]) => fields.includes(key) && value !== undefined)
+  );
+
+  const hasLatitude = input.latitude != null;
+  const hasLongitude = input.longitude != null;
+  // Half a coordinate is not a smaller correction, it is an incomplete one. Rejected rather than
+  // ignored, because silently dropping it would look identical to success.
+  if (hasLatitude !== hasLongitude) {
+    throw new Error('Latitude and longitude must be given together.');
+  }
+  if (hasLatitude && input.clear_coordinates) {
+    throw new Error('Give coordinates or clear_coordinates, not both.');
+  }
+
+  if (hasLatitude && hasLongitude) {
+    patch.location = `POINT(${input.longitude} ${input.latitude})`;
+    patch.coordinate_source = input.coordinate_source ?? 'estimated';
+  } else if (input.clear_coordinates) {
+    // A point known to be wrong is worse than no point: it puts a confident pin on a map.
+    patch.location = null;
+    patch.coordinate_source = null;
+  } else if (input.coordinate_source !== undefined) {
+    // Re-labelling an existing point — an estimate later confirmed — without restating it. The
+    // database enforces that a source needs a point; catching it here says which call to make
+    // instead, rather than surfacing a constraint name to the traveller.
+    if (place.location == null) {
+      throw new Error('This place has no coordinates to label. Send latitude and longitude instead.');
+    }
+    patch.coordinate_source = input.coordinate_source;
+  }
+
+  if (!Object.keys(patch).length) throw new Error('Nothing to update.');
+
+  const { data, error } = await supabase
+    .from('places')
+    .update(patch)
+    .eq('id', input.place_id)
+    .select('*')
+    .single();
+  fail(error, 'updatePlace');
+  return data;
 }
 
 export async function addItineraryItem(ctx, input) {
@@ -1020,6 +1099,7 @@ function offlinePlaceRow(row) {
       country_code: row.country_code,
       latitude: row.latitude,
       longitude: row.longitude,
+      coordinate_source: row.coordinate_source,
       external_ids: row.external_ids,
       metadata: row.place_metadata,
       created_at: row.place_created_at,

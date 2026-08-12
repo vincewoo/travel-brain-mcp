@@ -46,6 +46,7 @@ function dayPoints(timeline: ItineraryItem[], places: Map<string, Place>): MapPo
       index: order + 1,
       tone: done ? "muted" as const : "info" as const,
       muted: done,
+      approximate: place.coordinate_source === "estimated",
     }];
   });
 }

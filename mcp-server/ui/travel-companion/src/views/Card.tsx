@@ -66,7 +66,13 @@ export function CardView({ snapshot, places, origin, offline, mapsEnabled, onEna
       {lodging.map((place, order) => <article className="row" key={place.id}>
         <div className="row-title-line"><strong>{place.name}</strong></div>
         {order < MAPPED_LODGING ? <MapPanel
-          points={[{ id: place.id, label: place.name, latitude: place.latitude, longitude: place.longitude }]}
+          points={[{
+            id: place.id,
+            label: place.name,
+            latitude: place.latitude,
+            longitude: place.longitude,
+            approximate: place.coordinate_source === "estimated",
+          }]}
           origin={origin}
           height={160}
           interactive={false}

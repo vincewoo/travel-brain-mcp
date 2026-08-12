@@ -31,6 +31,12 @@ export interface MapPoint {
   index?: number;
   /** Drawn hollow — a place that is done, skipped, or otherwise behind the traveller. */
   muted?: boolean;
+  /**
+   * The coordinates are an estimate rather than a surveyed fix, so the pin is drawn with a broken
+   * edge. A dashed pin says "roughly here" without a sentence, which is the only honest way to draw
+   * a point recalled from memory next to one that was measured.
+   */
+  approximate?: boolean;
 }
 
 const TONE_VAR: Record<Tone, string> = {
@@ -72,7 +78,12 @@ function Dial({ point, origin }: { point: MapPoint; origin: Origin }) {
     <circle cx="60" cy="60" r={radius} fill="var(--surface-sunken)" stroke="var(--border)" />
     <text x="60" y="14" className="offline-map-compass" textAnchor="middle">N</text>
     <line x1="60" y1="60" x2={tip.x} y2={tip.y} stroke={TONE_VAR[point.tone ?? "info"]} strokeWidth="2.5" strokeLinecap="round" />
-    <circle cx={tip.x} cy={tip.y} r="4.5" fill={TONE_VAR[point.tone ?? "info"]} />
+    <circle
+      cx={tip.x} cy={tip.y} r="4.5"
+      fill={point.approximate ? "var(--surface)" : TONE_VAR[point.tone ?? "info"]}
+      stroke={TONE_VAR[point.tone ?? "info"]} strokeWidth="2"
+      strokeDasharray={point.approximate ? "2.5 2" : undefined}
+    />
     <circle cx="60" cy="60" r="3.5" fill="var(--text)" />
     <text x="60" y="112" className="offline-map-scale" textAnchor="middle">{distanceLabel(metres) ?? ""}</text>
   </svg>;
@@ -150,7 +161,12 @@ export function OfflineMap({ points, origin, height = 200 }: {
           x1={toSvg(originAt).x} y1={toSvg(originAt).y} x2={x} y2={y}
           className="offline-map-thread"
         /> : null}
-        <circle cx={x} cy={y} r={point.index ? 10 : 7} fill={point.muted ? "var(--surface)" : colour} stroke={colour} strokeWidth="2" />
+        <circle
+          cx={x} cy={y} r={point.index ? 10 : 7}
+          fill={point.muted ? "var(--surface)" : colour}
+          stroke={colour} strokeWidth="2"
+          strokeDasharray={point.approximate ? "3 2.5" : undefined}
+        />
         {point.index ? <text x={x} y={y + 3.5} className="offline-map-index" textAnchor="middle" fill={point.muted ? colour : "var(--ink-text)"}>
           {point.index}
         </text> : null}

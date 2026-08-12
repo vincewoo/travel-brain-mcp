@@ -14,6 +14,8 @@ Shared access model: owner/editor/viewer.
 ### `places`
 Canonical place identity: name, category, provider IDs, address, and PostGIS point.
 
+`location` is nullable — a place saved by name alone is normal — and pairs with `coordinate_source` (`provided`, `estimated`, `geocoded`). A check constraint requires both or neither: a point with no stated source would look surveyed on a map, and a source with no point is a claim about nothing. `trip_offline_places` returns the source alongside the decomposed latitude/longitude so the companion can draw an estimate differently. See `docs/mcp-tools.md` for what the three values mean.
+
 ### `trip_places`
 Relationship between a trip and a place: shortlist, planned, visited, rejected. A place is shortlisted until it is scheduled, visited, or ruled out.
 

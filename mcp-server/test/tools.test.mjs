@@ -7,6 +7,7 @@ const expectedTools = [
   'create_trip',
   'get_trip',
   'add_place',
+  'update_place',
   'add_itinerary_item',
   'update_itinerary_item',
   'remove_itinerary_item',
@@ -30,7 +31,7 @@ const expectedTools = [
   'commit_itinerary_change'
 ];
 
-test('the original 12, all 11 Step 4, itinerary removal, and the offline snapshot MCP tool names remain registered', () => {
+test('the original 12, all 11 Step 4, itinerary removal, the offline snapshot, and place correction MCP tool names remain registered', () => {
   const names = [];
   const server = {
     registerTool(name) {

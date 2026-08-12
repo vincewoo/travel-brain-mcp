@@ -8,4 +8,5 @@
 6. Refresh volatile research before a near-term decision.
 7. Semantic inferences start as candidate memories unless the user explicitly stated them.
 8. Current location is ephemeral context. Do not build a historical movement trail unless the user explicitly requests it.
-9. Never perform external purchases/cancellations using Travel Brain-only tools.
+9. Save coordinates with a place whenever it has a real fixed location, including approximate ones recalled for a well-known landmark — they are what the offline companion draws its maps from, and they are stored as `estimated` unless stated otherwise. Leave them off entirely for anything without a single location: a category, an area, or somewhere to be chosen on the day. Never invent an address or a point to make a place look better recorded, and use `update_place` to correct one rather than saving the place again.
+10. Never perform external purchases/cancellations using Travel Brain-only tools.

@@ -116,6 +116,7 @@ export function PlacesView({ cards, query, city, status, group, openGroups, orig
     longitude: card.place.longitude,
     tone: placeStatus(card.tripStatus, card.researchFreshness).dot,
     muted: statusOf(card) === "rejected",
+    approximate: card.place.coordinate_source === "estimated",
   }));
   const pickedCard = model.visible.find((card) => card.place.id === picked) ?? null;
 

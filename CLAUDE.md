@@ -174,6 +174,9 @@ These are enforced in code and asserted in tests; breaking one is a product bug,
   Anything in progress, completed, timed, journaled, visited, reserved, or currently live must be
   `skipped`/`cancelled` instead — the guard lives in the `delete_itinerary_item` function because
   the referencing foreign keys are `on delete set null` and would silently orphan real memories.
+- A stored place coordinate always carries its `coordinate_source`, and the two are added and
+  removed together — a point that does not say whether it was surveyed or recalled looks surveyed
+  on a map. `estimated` is the default for a supplied point, and the companion draws it dashed.
 - `current_trip_state.last_location` is one ephemeral point per trip, always returned qualified as
   `fresh`/`stale`/`missing`. Do not add a passive GPS trail.
 - Tools mutate Travel Brain only. No purchases, cancellations, or messages to external systems.

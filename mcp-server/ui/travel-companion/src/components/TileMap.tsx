@@ -32,7 +32,12 @@ const TONE_CLASS: Record<string, string> = {
 
 function pinElement(point: MapPoint): HTMLElement {
   const element = document.createElement("div");
-  element.className = `map-pin ${TONE_CLASS[point.tone ?? "info"] ?? "info"}${point.muted ? " muted-fill" : ""}`;
+  element.className = [
+    "map-pin",
+    TONE_CLASS[point.tone ?? "info"] ?? "info",
+    point.muted ? "muted-fill" : "",
+    point.approximate ? "approximate" : "",
+  ].filter(Boolean).join(" ");
   element.title = point.label;
   if (point.index) element.textContent = String(point.index);
   return element;
@@ -69,7 +74,7 @@ export default function TileMap({ points, origin, height = 220, interactive = tr
   // A stable description of what is drawn, so the effect re-runs when the pins actually change
   // rather than on every parent render.
   const signature = JSON.stringify([
-    placed.map((point) => [point.id, point.latitude, point.longitude, point.tone, point.index, point.muted]),
+    placed.map((point) => [point.id, point.latitude, point.longitude, point.tone, point.index, point.muted, point.approximate]),
     origin ? [origin.latitude, origin.longitude] : null,
   ]);
 

@@ -74,7 +74,18 @@ export function MapPanel({
   // Said under every map, tiles or not: the count is how you know the drawing is the whole day and
   // not the part of it that happened to be geocoded.
   const note = missing > 0 ? `${mappable.length} of ${plural(counted, noun)} mapped` : "";
-  const caption = tiles ? note : [note, offline ? "No basemap offline — positions and distances are real" : ""].filter(Boolean).join(" · ");
+  // The dashed pin already says which points are estimates. This says it once in words when every
+  // pin is one, because a map drawn entirely from recalled coordinates is worth stating outright
+  // rather than leaving to be inferred from a stroke style.
+  const estimated = mappable.filter((point) => point.approximate).length;
+  const approximate = estimated === mappable.length
+    ? "Positions are approximate"
+    : estimated > 0 ? `${estimated} position${estimated === 1 ? "" : "s"} approximate` : "";
+  const caption = [
+    note,
+    approximate,
+    tiles || !offline ? "" : "No basemap offline — positions and distances are real",
+  ].filter(Boolean).join(" · ");
 
   return <div className="map-panel">
     {tiles

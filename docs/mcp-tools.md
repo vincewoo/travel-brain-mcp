@@ -27,6 +27,23 @@ Create a trip and owner membership.
 ### `add_place`
 Create a canonical place and optionally attach it to a trip.
 
+### `update_place`
+Correct a saved place: its coordinates, address, or other descriptive fields. This is the tool to reach for when something is wrong — calling `add_place` again would insert a second place, because places are inserted rather than upserted. Only the traveller who saved a place can update it, mirroring the `places_creator_update` RLS policy so static mode is no laxer than OAuth mode.
+
+It edits description, never history. A visit, journal entry, or recommendation attached to the place is untouched: correcting where a restaurant is does not restate what happened there.
+
+### Coordinates and where they came from
+
+`places.location` is optional and always has been, and for a long time nothing asked for it, so places accumulated without one and the companion's maps had nothing to draw. Both `add_place` and `update_place` now say in their schemas what coordinates are for, and every stored point carries a `coordinate_source`:
+
+- `provided` — the caller knew the coordinates exactly.
+- `estimated` — recalled or approximate. **The default** whenever a point is supplied without a source, because the usual caller is a planning agent working from memory, and a guess presented as a fact is the failure worth defaulting against.
+- `geocoded` — looked up. Nothing writes this today; it exists so that adding a geocoding path later is a code change rather than a migration.
+
+The database enforces that a point and its source exist together or not at all. The companion draws an `estimated` pin with a dashed edge and says "Positions are approximate" under the map, which is the whole reason the column exists: an estimate is good enough to show which side of the river something is on, and not good enough to walk the last hundred metres by.
+
+A place with no single location — a category, an area, or somewhere to be chosen on the day — should be left without coordinates rather than given plausible ones. `clear_coordinates` removes a point already known to be wrong, since no pin is better than a confident pin in the wrong place.
+
 ### `add_itinerary_item`
 Schedule an item with planned timing and flexibility.
 

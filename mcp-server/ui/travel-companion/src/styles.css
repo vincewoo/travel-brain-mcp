@@ -187,6 +187,9 @@ main { flex: 1 1 auto; padding-bottom: calc(20px + var(--safe-bottom)); }
 .map-pin.danger { background: var(--danger); }
 .map-pin.ok { background: var(--ok); }
 .map-pin.muted-fill { background: var(--surface); color: var(--muted); }
+/* A broken edge for a point nobody surveyed. Same size and colour as a real pin, because it is
+   still the right place — just not to the metre. */
+.map-pin.approximate { border-style: dashed; border-color: var(--surface); }
 .map-origin {
   width: 15px; height: 15px; border-radius: var(--radius-pill);
   background: var(--text); border: 3px solid var(--surface); box-shadow: 0 0 0 3px var(--info-bg);

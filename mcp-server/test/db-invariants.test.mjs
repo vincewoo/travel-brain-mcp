@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  addPlace,
   markPlaceVisited,
   recommendPlace,
   recordJournalNote,
   rememberPreference,
   saveResearchFinding,
-  tripAccess
+  tripAccess,
+  updatePlace
 } from '../src/db.mjs';
 import { createScriptedSupabase } from './support/scripted-supabase.mjs';
 
@@ -146,4 +148,88 @@ test('journal write preserves the raw traveler note verbatim', async () => {
   const journalRow = scripted.supabase.calls[1].value;
   assert.equal(journalRow.raw_note, rawNote);
   assert.equal('generated_summary' in journalRow, false);
+});
+
+/**
+ * Coordinates carry where they came from.
+ *
+ * A point recalled by a model and a point someone surveyed render differently on the companion's
+ * map, which only works if the two are distinguishable in the row. `estimated` is the default
+ * because the common caller is the planning agent working from memory, and the failure worth
+ * defaulting against is a guess presented as a fact.
+ */
+test('a saved point defaults to estimated, and an exact one keeps its claim', async () => {
+  const guessed = context(ownerId, [{ table: 'places', data: { id: placeId } }]);
+  await addPlace(guessed.ctx, { name: 'Elephant Trunk Hill', latitude: 25.259, longitude: 110.303 });
+  assert.equal(guessed.supabase.calls[0].value.coordinate_source, 'estimated');
+  assert.equal(guessed.supabase.calls[0].value.location, 'POINT(110.303 25.259)');
+
+  const exact = context(ownerId, [{ table: 'places', data: { id: placeId } }]);
+  await addPlace(exact.ctx, { name: 'Star Ferry', latitude: 22.2937, longitude: 114.1685, coordinate_source: 'provided' });
+  assert.equal(exact.supabase.calls[0].value.coordinate_source, 'provided');
+
+  // No point, no source: the pair is what the database constraint is about.
+  const unplaced = context(ownerId, [{ table: 'places', data: { id: placeId } }]);
+  await addPlace(unplaced.ctx, { name: 'Riverside fish restaurants' });
+  assert.equal('location' in unplaced.supabase.calls[0].value, false);
+  assert.equal('coordinate_source' in unplaced.supabase.calls[0].value, false);
+});
+
+test('update_place corrects a place without touching what happened there', async () => {
+  const scripted = context(ownerId, [
+    { table: 'places', data: { id: placeId, created_by: ownerId, location: null } },
+    { table: 'places', data: { id: placeId, coordinate_source: 'estimated' } }
+  ]);
+  await updatePlace(scripted.ctx, {
+    place_id: placeId,
+    latitude: 25.2536,
+    longitude: 110.2864,
+    address: 'Reed Flute Rd, Guilin'
+  });
+  const patch = scripted.supabase.calls[1].value;
+  assert.equal(patch.location, 'POINT(110.2864 25.2536)');
+  assert.equal(patch.coordinate_source, 'estimated');
+  assert.equal(patch.address, 'Reed Flute Rd, Guilin');
+  // Description only. Nothing here reaches a visit, a journal entry, or a recommendation.
+  assert.deepEqual(Object.keys(patch).sort(), ['address', 'coordinate_source', 'location']);
+  scripted.supabase.assertComplete();
+});
+
+test('clearing coordinates drops the point and its source together', async () => {
+  const scripted = context(ownerId, [
+    { table: 'places', data: { id: placeId, created_by: ownerId, location: '0101000020E6100000' } },
+    { table: 'places', data: { id: placeId } }
+  ]);
+  await updatePlace(scripted.ctx, { place_id: placeId, clear_coordinates: true });
+  const patch = scripted.supabase.calls[1].value;
+  // A point known to be wrong is worse than none: it is a confident pin in the wrong place.
+  assert.equal(patch.location, null);
+  assert.equal(patch.coordinate_source, null);
+});
+
+test('update_place refuses the corrections that would land as a lie or a silent no-op', async () => {
+  // Only the creator, mirroring the places_creator_update RLS policy. Static mode bypasses RLS, so
+  // without this check it would be the laxer of the two modes.
+  const stranger = context(editorId, [{ table: 'places', data: { id: placeId, created_by: ownerId, location: null } }]);
+  await assert.rejects(
+    () => updatePlace(stranger.ctx, { place_id: placeId, latitude: 1, longitude: 2 }),
+    /Only the traveller who saved a place/
+  );
+
+  // Half a coordinate is an incomplete correction, and dropping it silently would look like success.
+  const half = context(ownerId, [{ table: 'places', data: { id: placeId, created_by: ownerId, location: null } }]);
+  await assert.rejects(
+    () => updatePlace(half.ctx, { place_id: placeId, latitude: 22.3 }),
+    /Latitude and longitude must be given together/
+  );
+
+  // Labelling a point that does not exist. The database would reject it too; this says what to do.
+  const unplaced = context(ownerId, [{ table: 'places', data: { id: placeId, created_by: ownerId, location: null } }]);
+  await assert.rejects(
+    () => updatePlace(unplaced.ctx, { place_id: placeId, coordinate_source: 'provided' }),
+    /no coordinates to label/
+  );
+
+  const missing = context(ownerId, [{ table: 'places', data: null }]);
+  await assert.rejects(() => updatePlace(missing.ctx, { place_id: placeId, latitude: 1, longitude: 2 }), /not found/);
 });

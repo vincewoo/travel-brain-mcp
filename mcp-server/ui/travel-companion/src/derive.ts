@@ -8,7 +8,6 @@ import {
   schedulePosition,
   sortedTimeline,
   timelineInstant,
-  unscheduledTripPlaces,
 } from "../../../src/trip-clock.mjs";
 import type { ClockIssue, PlanDay } from "../../../src/trip-clock.mjs";
 import type {
@@ -64,12 +63,14 @@ export interface PlaceCard {
   distanceMeters: number | null;
 }
 
-/** What `get_plan_overview` returns, recomputed from the cached rows. */
+/**
+ * What `get_plan_overview` returns, recomputed from the cached rows — minus its unscheduled tray,
+ * which the phone has no way to act on and so does not render.
+ */
 export interface PlanView {
   days: PlanDay<ItineraryItem>[];
   issues: ClockIssue[];
   scheduledCount: number;
-  unscheduled: TripPlace[];
 }
 
 export interface RecommendationCard {
@@ -137,7 +138,7 @@ export function placeIndex(snapshot: Snapshot): Map<string, Place> {
 }
 
 /**
- * The whole plan: days, everything wrong with it, and the shortlist still waiting for a slot.
+ * The whole plan: every day of it, and everything wrong with it.
  *
  * `getPlanOverview` builds this from the same `planIssues`/`planDays` functions in
  * `trip-clock.mjs`, so a trip showing four issues in the dashboard shows four here — offline, and
@@ -165,7 +166,6 @@ export function planView(snapshot: Snapshot, at: Date = new Date()): PlanView {
       endDate: snapshot.trip.end_date,
     }),
     scheduledCount: snapshot.itinerary.filter((item) => !["cancelled", "skipped"].includes(item.status)).length,
-    unscheduled: unscheduledTripPlaces(snapshot.itinerary, snapshot.places),
   };
 }
 

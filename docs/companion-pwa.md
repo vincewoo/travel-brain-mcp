@@ -205,7 +205,9 @@ Five tabs. It should feel like a boarding pass, not a workspace.
    the dashboard renders them, and on a screen wide enough (820px and up — a tablet, a laptop) the
    same day sections turn into columns that scroll horizontally, three or four days at once. The
    day strip across the top is not a filter but the jump: tap a date and its day comes to you. The
-   shortlist still waiting for a slot sits at the bottom.
+   dashboard's unscheduled tray is not mirrored here: nothing on this phone can put a saved place
+   onto a day, so a shortlist at the bottom of the plan is only something to look at. The shortlist
+   lives in Places, where it can at least be searched and filtered.
 3. **Places** — the cached list with local filter and search (plain `Array.filter` over the
    snapshot, no server needed), status chips with live counts and grouping by category, area or
    status, each row carrying address, map deep link, the visit, and the first research findings.

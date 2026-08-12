@@ -35,8 +35,10 @@
     <path d="M306 172 L406 128 L406 340 L306 384 Z" fill="url(#paper)" />
   </g>
 
-  <!-- One route, ending in the place worth going to. -->
-  <path d="M150 334 C 214 338 218 262 268 248 C 312 236 330 226 354 200"
-        fill="none" stroke="#38bdf8" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" />
-  <circle cx="354" cy="200" r="24" fill="#0ea5e9" />
+  <!-- One route, winding, ending in the place worth going to. The turns are quadratics rather than
+       corners: struck as a straight polyline the same path reads as a line chart, and rounding the
+       apexes just enough turns it back into a trail. -->
+  <path d="M150 340 Q 176 314 198 302 Q 218 310 228 322 Q 250 292 270 258 Q 292 262 302 272 Q 330 240 354 202"
+        fill="none" stroke="#38bdf8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="354" cy="202" r="22" fill="#0ea5e9" />
 </svg>

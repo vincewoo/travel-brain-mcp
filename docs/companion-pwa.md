@@ -306,6 +306,25 @@ corner of which city is on screen, the first map asks before loading one and rem
 `maps:enabled`; the Card tab can turn it back off, and `forgetDevice` clears it with everything
 else.
 
+**The zoom stops near where the data does.** That planet tileset declares `maxzoom: 14`, so past
+z14 MapLibre rescales the z14 tile rather than fetching a finer one. Left at MapLibre's default
+ceiling of z22 the pinch went on offering detail that could never arrive. It is worst over mainland
+China, where OSM carries roads and points of interest but almost no building footprints — a z14
+tile of central Guilin holds four buildings against Hong Kong's 176 — so the extra zoom only
+magnified empty background, and a map that was merely sparse read as a map that was broken.
+`MAX_ZOOM` caps it two steps above the source, which still pulls a cluster of pins apart.
+
+**What counts as failure is decided by what failed, not by the error text.** `classifyMapError`
+separates a dead style or source descriptor (fatal: nothing will ever render) from a single missing
+tile (survivable) from a glyph or sprite (ignored: labels degrade, the map works). The rule it
+replaced asked whether the error message contained the word "style", which matched only because the
+style URL contains `/styles/`; tiles are served from `/planet/` and so never matched, and a blocked
+or captive-portalled basemap left an empty rectangle instead of the schematic. `createTileWatch`
+adds the asymmetry that matters: a map that has already painted keeps its place when one tile goes
+missing, while a map that has never painted gives way after `TILE_FAILURE_LIMIT`. Both live in
+`map-source.mjs` — plain JavaScript, outside the MapLibre chunk, so
+`test/companion-map-failure.test.mjs` can exercise the rules directly without a DOM.
+
 Still not built: **offline tiles**. Nothing is cached — the service worker already passes
 cross-origin requests straight through, so no change was needed to keep that true. A pre-downloaded
 PMTiles archive for the trip's bounding box is the obvious next step if the schematic proves too

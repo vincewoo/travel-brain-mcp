@@ -16,7 +16,11 @@
 // path with the shell under a 200, and `cacheFirst` stored that HTML under a `.mjs` URL. The URL
 // does not change when the build is fixed, so without a new cache name the stale HTML would go on
 // being served to everyone who already has it and the map would stay broken.
-const VERSION = "travel-companion-v2";
+//
+// v3 is the same problem in its ordinary form: the icons live at fixed, unhashed `/app/icon-*.png`
+// URLs, so redrawing them changes the bytes without changing the request. An installed companion
+// would keep serving the compass out of the v2 cache until something dropped it.
+const VERSION = "travel-companion-v3";
 const SHELL = "/app/";
 
 self.addEventListener("install", (event) => {

@@ -140,8 +140,9 @@ It is the same product as the dashboard and has to look like it: both draw on
 both surfaces. The companion mirrors the dashboard's views (Now/Today, Plan, Places, Journal with
 recommendations) and adds the offline reference sheet the dashboard has no reason to carry —
 local-script addresses, confirmation codes, straight-line distance. What it must never mirror is the
-dashboard's writes: every "Mark done", "Skip" and "Ask Claude" affordance stays out until the Phase
-2 outbox exists.
+dashboard's itinerary writes: every itinerary "Mark done", "Skip" and "Ask Claude" affordance
+stays out until the Phase 2 outbox exists. Planning-task checkboxes are the narrow exception: while
+connected they call the idempotent `update_trip_task` tool and only update IndexedDB after success.
 
 Maps are the phone's, not the dashboard's, and they degrade rather than disappear: `OfflineMap` is
 dependency-free SVG in the shell, drawing true relative positions and a haversine-measured scale bar
@@ -153,8 +154,9 @@ near the tileset's own `maxzoom: 14` so the pinch cannot promise detail that wil
 the rule deciding when a failing basemap gives way to the schematic. Classify that failure by what
 failed — style, tile, glyph — never by matching the error text.
 
-It is its own OAuth 2.1 client; the shell is public and holds no trip data. Phase 1 is read-only.
-Phase 2 adds an outbox limited to writes that append or record what already happened — the
+It is its own OAuth 2.1 client; the shell is public and holds no trip data. Phase 1 is offline
+read-only apart from connected planning-task checkboxes. Phase 2 adds an outbox limited to writes
+that append or record what already happened — the
 `client_op_id` idempotency on `add_place`, `record_journal_note`, `mark_place_visited`, and
 `remember_preference` exists for that replay. `update_current_trip_state` is deliberately never
 queued: a location delivered four hours late is a false statement. See `docs/companion-pwa.md`.

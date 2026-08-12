@@ -48,11 +48,21 @@ Cancelling an item is a record ("we had this booked and it did not happen"); whi
 
 The `202608110002_itinerary_removal.sql` migration also performs a one-time cleanup, deleting the `cancelled` and `skipped` rows already in the database under that same guard. Every one of them was written before removal existed, so they are the cruft this feature prevents; rows with any recorded history are left untouched. The migration reports how many it removed as a `NOTICE`.
 
+Trip planning TODOs add three tools:
+
+- `get_trip_tasks`
+- `add_trip_task`
+- `update_trip_task`
+
+Tasks are untimed work rather than itinerary events. Their optional date can be a true deadline or
+the day a booking/ticket window opens, and the dashboard and companion Plan views expose them as
+direct checkboxes.
+
 The offline companion adds one more read tool over the same data:
 
 - `get_offline_snapshot`
 
-It returns a whole trip in a single call — itinerary, reservations, places *with coordinates*,
+It returns a whole trip in a single call — itinerary, planning tasks, reservations, places *with coordinates*,
 visits, journal, research, recommendations, stored lessons and preferences, and live state — for a
 client that has to work with no connection. It returns rows rather than derived day views, because
 a cached "today" is wrong once local midnight passes; the client recomputes the day grouping from
@@ -211,7 +221,7 @@ npm --prefix ui/travel-dashboard run build
 npm --prefix ui/travel-companion run build
 ```
 
-This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 25 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, the single-file dashboard build, and the offline snapshot, replay idempotency, and companion shell.
+This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 29 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, the single-file dashboard build, and the offline snapshot, replay idempotency, and companion shell.
 
 The repository also contains a real PostgreSQL fixture at `mcp-server/test/sql/step4-integration.sql`. Run it after applying migrations to an isolated Supabase Postgres database; it verifies PostGIS ordering plus proposal commit, stale rejection, atomicity, idempotency, viewer denial, planned-vs-actual preservation, and itinerary removal with its history guard.
 
@@ -377,7 +387,7 @@ curl --fail "${PUBLIC_BASE_URL}/.well-known/oauth-protected-resource/mcp"
 curl -i "${PUBLIC_BASE_URL}/mcp"
 ```
 
-The last request must be `401` and its `WWW-Authenticate` header must advertise the protected-resource metadata URL. Complete the OAuth login in an MCP client/Inspector, list all 26 tools (25 data tools plus `show_travel_dashboard`), and run owner/editor/viewer/unrelated-user and write-persistence checks with real users.
+The last request must be `401` and its `WWW-Authenticate` header must advertise the protected-resource metadata URL. Complete the OAuth login in an MCP client/Inspector, list all 30 tools (29 data tools plus `show_travel_dashboard`), and run owner/editor/viewer/unrelated-user and write-persistence checks with real users.
 
 ## Automatic Fly.io deployment
 

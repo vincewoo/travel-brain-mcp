@@ -41,6 +41,18 @@ export interface ItineraryItem {
   metadata: Record<string, unknown>;
 }
 
+export interface TripTask {
+  id: string;
+  trip_id: string;
+  title: string;
+  notes: string | null;
+  due_date: string | null;
+  date_kind: "due" | "opens";
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Reservation {
   id: string;
   itinerary_item_id: string | null;
@@ -165,6 +177,7 @@ export interface Origin {
 export interface Snapshot {
   trip: Trip;
   itinerary: ItineraryItem[];
+  tasks: TripTask[];
   reservations: Reservation[];
   places: TripPlace[];
   visits: Visit[];

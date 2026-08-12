@@ -183,7 +183,8 @@ test('plan overview reports overlaps, unscheduled priority places, and stale vol
       { trip_id: tripId, place_id: placeId, status: 'planned', priority: 3, places: { id: placeId, name: 'Tour', locality: 'Minato' } },
       saved
     ] },
-    { table: 'research_items', data: [{ place_id: placeId, volatility: 'volatile', status: 'active', valid_as_of: '2026-01-01T00:00:00Z' }] }
+    { table: 'research_items', data: [{ place_id: placeId, volatility: 'volatile', status: 'active', valid_as_of: '2026-01-01T00:00:00Z' }] },
+    { table: 'trip_tasks', data: [{ id: 'task-1', title: 'Reserve dinner', due_date: null, completed_at: null }] }
   ]);
   const overview = await getPlanOverview(scripted.ctx, tripId, '2026-10-14T05:00:00Z');
   assert.ok(overview.issues.some((issue) => issue.type === 'overlap'));
@@ -191,6 +192,7 @@ test('plan overview reports overlaps, unscheduled priority places, and stale vol
   assert.ok(overview.issues.some((issue) => issue.type === 'stale_volatile_research'));
   assert.deepEqual(overview.unscheduled_places, [saved]);
   assert.equal(overview.scheduled_count, 2);
+  assert.equal(overview.tasks[0].title, 'Reserve dinner');
 });
 
 test('places overview independently preserves researched, scheduled, visited, and firsthand state', async () => {

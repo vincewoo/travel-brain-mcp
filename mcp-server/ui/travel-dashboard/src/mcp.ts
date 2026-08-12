@@ -128,6 +128,7 @@ export async function loadPlan(shell: LoadedTripShell): Promise<PlanOverview> {
     scheduled_count: raw?.scheduled_count ?? 0, days: Array.isArray(raw?.days) ? raw.days : [],
     issues: Array.isArray(raw?.issues) ? raw.issues : [],
     unscheduled_places: Array.isArray(raw?.unscheduled_places) ? raw.unscheduled_places.map(normalizePlace) : [],
+    tasks: Array.isArray(raw?.tasks) ? raw.tasks : [],
   };
 }
 

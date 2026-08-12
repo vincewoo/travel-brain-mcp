@@ -7,7 +7,8 @@ The LLM reasons over travel state; it does not own travel state. A chat transcri
 ## System boundaries
 
 ### Travel Brain database
-Stores durable facts and provenance.
+Stores durable facts and provenance, including untimed trip planning tasks separately from the
+scheduled itinerary.
 
 ### MCP server
 Exposes narrow, goal-oriented operations. It validates authorization and invariants before writes.
@@ -26,7 +27,7 @@ Reasoning-heavy dashboard actions send a user message to the host model. The mod
 ### Companion PWA
 An installable offline companion served at `/app` on the same origin as `/mcp`, for the parts of a trip where there is no usable connection and therefore no Claude. It is a cache and, from Phase 2, a capture device — never a second source of truth.
 
-It reads through one tool, `get_offline_snapshot`, and stores the returned rows in IndexedDB. Day grouping, now/next/then, overlap alerts, and nearby distances are recomputed on the device from those rows, using the same `src/trip-clock.mjs` the server's read models use, so the two cannot disagree about which local day an item falls on. Caching a derived `get_today` instead would be wrong by morning.
+It reads through one tool, `get_offline_snapshot`, and stores the returned rows in IndexedDB. Day grouping, now/next/then, overlap alerts, and nearby distances are recomputed on the device from those rows, using the same `src/trip-clock.mjs` the server's read models use, so the two cannot disagree about which local day an item falls on. Caching a derived `get_today` instead would be wrong by morning. Planning tasks remain readable offline; their checkboxes make a narrow direct `update_trip_task` call when connected and update the cached row after the server accepts the write.
 
 The shell is public and holds no trip data; the app authenticates as its own OAuth 2.1 client and every byte of travel content still arrives through an authenticated MCP call. Location and schedule drift remain ephemeral state, not permanent location history.
 

@@ -2,6 +2,9 @@
 export const TOOL = {
   listTrips: "list_trips",
   trip: "get_trip",
+  tripTasks: "get_trip_tasks",
+  addTripTask: "add_trip_task",
+  updateTripTask: "update_trip_task",
   today: "get_today",
   currentContext: "get_current_context",
   planOverview: "get_plan_overview",
@@ -38,4 +41,12 @@ export interface UpdateItineraryItemInput {
   notes?: string;
 }
 export interface RemoveItineraryItemInput { itinerary_item_id: string; }
+export interface UpdateTripTaskInput {
+  trip_task_id: string;
+  title?: string;
+  notes?: string | null;
+  due_date?: string | null;
+  date_kind?: "due" | "opens";
+  completed?: boolean;
+}
 export interface CommitItineraryChangeInput { proposal_id: string; }

@@ -5,7 +5,7 @@ import { dateLabel, dateTimeLabel, humanize, joinMeta, plural, shortDateLabel } 
 import { relatedIssues, withAlerts } from "../../../shared/timeline";
 import type { PlanView as Plan } from "../derive";
 import { dayView, journalForDate, reservationsForItem } from "../derive";
-import type { Place, Snapshot } from "../types";
+import type { Place, Snapshot, TripTask } from "../types";
 
 /**
  * The whole plan, every day of it — the dashboard's Plan view on a phone, and a board on a screen.
@@ -26,13 +26,16 @@ import type { Place, Snapshot } from "../types";
  * bottom of the plan is a list you can only look at. It lives in Places, where the rest of the
  * shortlist already is.
  */
-export function PlanView({ snapshot, plan, days, selected, today, places, onSelect }: {
+export function PlanView({ snapshot, plan, days, selected, today, places, online, taskBusy, onTaskToggle, onSelect }: {
   snapshot: Snapshot;
   plan: Plan;
   days: string[];
   selected: string;
   today: string;
   places: Map<string, Place>;
+  online: boolean;
+  taskBusy: string | null;
+  onTaskToggle: (task: TripTask, completed: boolean) => void;
   onSelect: (date: string) => void;
 }) {
   const stripRef = useRef<HTMLDivElement>(null);
@@ -78,6 +81,39 @@ export function PlanView({ snapshot, plan, days, selected, today, places, onSele
         </button>;
       })}
     </div>
+
+    <section className="container">
+      <div className="container-head sunken">
+        <div className="head-label">
+          <strong>To do</strong>
+          <span>{joinMeta(
+            plural((snapshot.tasks ?? []).filter((task) => !task.completed_at).length, "open task"),
+            !online ? "Reconnect to update" : "",
+          )}</span>
+        </div>
+      </div>
+      {(snapshot.tasks ?? []).length ? (snapshot.tasks ?? []).map((task) => {
+        const completed = Boolean(task.completed_at);
+        const dateState = task.date_kind === "opens"
+          ? (task.due_date && task.due_date > today ? "Opens" : "Opened")
+          : "Due";
+        return <label className={`select-row task-row${completed ? " is-complete" : ""}`} key={task.id}>
+          <input
+            type="checkbox"
+            checked={completed}
+            disabled={!online || taskBusy !== null}
+            onChange={(event) => onTaskToggle(task, event.target.checked)}
+          />
+          <div className="row-body">
+            <div className="row-title-line">
+              <strong>{task.title}</strong>
+              {task.due_date ? <span className="row-aside">{dateState} {dateLabel(task.due_date, true)}</span> : null}
+            </div>
+            {task.notes ? <p className="row-meta">{task.notes}</p> : null}
+          </div>
+        </label>;
+      }) : <div className="row"><p className="row-meta">No planning tasks yet.</p></div>}
+    </section>
 
     {plan.issues.length ? <section className="container">
       <div className="container-head sunken">

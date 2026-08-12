@@ -26,9 +26,10 @@ The HTTP integration test binds a loopback port and is skipped unless opted in:
 TRAVEL_BRAIN_NETWORK_TESTS=1 npm test
 ```
 
-Two separate npm projects under `ui/` must be built before the server tests that assert on their
-bundles, and before running the server (the MCP App resource reads the built HTML; `/app` serves the
-companion's `dist/`):
+Two separate npm projects under `mcp-server/ui/` must be built before the server tests that assert
+on their bundles, and before running the server (the MCP App resource reads the built HTML; `/app`
+serves the companion's `dist/`). Like every command here they run from `mcp-server/`, which is what
+the `ui/` prefixes below are relative to:
 
 ```bash
 npm --prefix ui/travel-dashboard ci
@@ -87,7 +88,7 @@ reachable from an unauthenticated route.
   runs in Node and in a browser. `db.mjs` and the companion PWA import the same file;
   `trip-clock.d.mts` types it for the TypeScript app. Put a new derivation here rather than inline
   in a read model if the companion also needs to compute it offline.
-- `ui/shared/` — what the two front ends have in common, imported by both npm projects:
+- `mcp-server/ui/shared/` — what the two front ends have in common, imported by both npm projects:
   `travel-brain.css` (the palette, type ramp, and the container/row/status vocabulary),
   `format.ts` (zone-aware time and date labels, flexibility and status tones), and `timeline.ts`
   (where an alert sits in a day). Sizing is tokenised so the dashboard can stay pointer-sized while
@@ -97,7 +98,7 @@ reachable from an unauthenticated route.
   so `/app/callback` can finish the OAuth exchange).
 - `dashboard-ui.mjs` — registers the `show_travel_dashboard` tool plus the `ui://travel-brain/
   dashboard.html` MCP App resource, reading the built single-file HTML from `dashboard/` (Docker
-  image) or `ui/travel-dashboard/dist/` (repo).
+  image) or `mcp-server/ui/travel-dashboard/dist/` (repo).
 - `bootstrap.mjs` — binds the port immediately during cold start, serves `/health` as `starting`
   and `503` elsewhere, then hands over to the loaded application.
 
@@ -128,24 +129,29 @@ commits are idempotent.
 
 ### The companion PWA is a cache, not a second source of truth
 
-`ui/travel-companion` is an installable offline app served at `/app` on the same origin as `/mcp`,
-for the parts of a trip with no usable connection and therefore no Claude. It reads through one
-tool, `get_offline_snapshot` (a whole trip in one round trip, rows rather than derived day views),
-stores those rows in IndexedDB, and recomputes Today/plan/nearby on the device via
+`mcp-server/ui/travel-companion` is an installable offline app served at `/app` on the same origin
+as `/mcp`, for the parts of a trip with no usable connection and therefore no Claude. It reads
+through one tool, `get_offline_snapshot` (a whole trip in one round trip, rows rather than derived
+day views), stores those rows in IndexedDB, and recomputes Today/plan/nearby on the device via
 `trip-clock.mjs`. Caching a derived `get_today` instead would be wrong once local midnight passes.
 
-It is the same product as the dashboard and has to look like it: both draw on `ui/shared/`, so a
-row, a status dot, a time label, and an empty state read the same on both surfaces. The companion
-mirrors the dashboard's views (Now/Today, Plan, Places, Journal with recommendations) and adds the
-offline reference sheet the dashboard has no reason to carry — local-script addresses,
-confirmation codes, straight-line distance. What it must never mirror is the dashboard's writes:
-every "Mark done", "Skip" and "Ask Claude" affordance stays out until the Phase 2 outbox exists.
+It is the same product as the dashboard and has to look like it: both draw on
+`mcp-server/ui/shared/`, so a row, a status dot, a time label, and an empty state read the same on
+both surfaces. The companion mirrors the dashboard's views (Now/Today, Plan, Places, Journal with
+recommendations) and adds the offline reference sheet the dashboard has no reason to carry —
+local-script addresses, confirmation codes, straight-line distance. What it must never mirror is the
+dashboard's writes: every "Mark done", "Skip" and "Ask Claude" affordance stays out until the Phase
+2 outbox exists.
 
 Maps are the phone's, not the dashboard's, and they degrade rather than disappear: `OfflineMap` is
 dependency-free SVG in the shell, drawing true relative positions and a haversine-measured scale bar
 with no basemap, and `MapPanel` reaches MapLibre through a dynamic `import()` so the library never
 enters the cold-start bundle — a test asserts the split. Tiles are OpenFreeMap, opted into once
-(`maps:enabled`), never cached, and never a grey grid when the radio is off.
+(`maps:enabled`), never cached, and never a grey grid when the radio is off. `map-source.mjs` holds
+what is known about that basemap without importing the library: the style URL, a zoom ceiling kept
+near the tileset's own `maxzoom: 14` so the pinch cannot promise detail that will never arrive, and
+the rule deciding when a failing basemap gives way to the schematic. Classify that failure by what
+failed — style, tile, glyph — never by matching the error text.
 
 It is its own OAuth 2.1 client; the shell is public and holds no trip data. Phase 1 is read-only.
 Phase 2 adds an outbox limited to writes that append or record what already happened — the
@@ -155,11 +161,11 @@ queued: a location delivered four hours late is a false statement. See `docs/com
 
 ### The dashboard is an MCP App, not a second service
 
-`ui/travel-dashboard` is a React/Vite app inlined to one HTML file and served as an MCP resource
-from the same authenticated server. It owns no credentials, no data store, and no second MCP
-endpoint: it calls the Step 4 tools through its host (`src/mcp.ts`), keeps only transient
-presentation state, and routes anything requiring reasoning to the host model via
-`app.sendMessage`. Deterministic writes (Mark Done, Skip, approved commits) call tools directly.
+`mcp-server/ui/travel-dashboard` is a React/Vite app inlined to one HTML file and served as an MCP
+resource from the same authenticated server. It owns no credentials, no data store, and no second
+MCP endpoint: it calls the Step 4 tools through its host (`src/mcp.ts`), keeps only transient
+presentation state, and routes anything requiring reasoning to the host model via `app.sendMessage`.
+Deterministic writes (Mark Done, Skip, approved commits) call tools directly.
 
 ## Invariants that must survive any change
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { LngLatBounds, Map as MapLibreMap, Marker, NavigationControl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { createTileWatch, MAX_ZOOM, STYLE_URL } from "../map-source.mjs";
 import type { MapPoint } from "./OfflineMap";
 import type { Origin } from "../types";
 
@@ -20,11 +21,6 @@ import type { Origin } from "../types";
  * through, so tiles are never stored, which is what keeps `docs/companion-pwa.md`'s "no offline
  * tiles" promise true. With the radio off, `MapPanel` draws the schematic instead.
  */
-
-/** The Liberty style already labels in `name:latin` + `name:nonlatin`, so Chinese place names come
- *  through beside the Latin ones without a style override — exactly what `address_local` exists
- *  for, on the map instead of in a row. */
-export const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 
 const TONE_CLASS: Record<string, string> = {
   muted: "muted", info: "info", warning: "warning", danger: "danger", ok: "ok",
@@ -85,6 +81,9 @@ export default function TileMap({ points, origin, height = 220, interactive = tr
       container: container.current,
       style: STYLE_URL,
       interactive,
+      // Without this MapLibre allows z22 over a source that stops at z14, so the pinch keeps
+      // offering detail that cannot arrive. See `MAX_ZOOM`.
+      maxZoom: MAX_ZOOM,
       // A phone in one hand does not need pitch or rotation, and both make a map harder to read
       // back against a north-up schematic.
       pitchWithRotate: false,
@@ -95,10 +94,16 @@ export default function TileMap({ points, origin, height = 220, interactive = tr
     instance.touchZoomRotate?.disableRotation();
     if (interactive) instance.addControl(new NavigationControl({ showCompass: false }), "top-right");
 
-    // A style that will not load means no tiles: say so once and let the panel fall back to the
-    // schematic rather than leaving the traveller looking at an empty rectangle.
+    // A basemap that will not load means the panel should fall back to the schematic rather than
+    // leave the traveller looking at an empty rectangle. What counts as "will not load" is decided
+    // in `map-source.mjs`: a dead style is fatal at once, tiles are given a few attempts, and a
+    // map that has already painted keeps its place when one tile goes missing.
+    const watch = createTileWatch();
+    instance.on("data", (event) => {
+      if (event.dataType === "source" && "tile" in event) watch.drew();
+    });
     instance.on("error", (event) => {
-      if (event?.error?.message?.includes("style")) fail.current?.();
+      if (watch.errored(event)) fail.current?.();
     });
 
     const markers: Marker[] = [];
@@ -121,7 +126,7 @@ export default function TileMap({ points, origin, height = 220, interactive = tr
       instance.jumpTo({ center: corners[0], zoom: 15.5 });
     } else {
       const bounds = corners.reduce((box, corner) => box.extend(corner), new LngLatBounds(corners[0], corners[0]));
-      instance.fitBounds(bounds, { padding: 48, maxZoom: 16, animate: false });
+      instance.fitBounds(bounds, { padding: 48, maxZoom: MAX_ZOOM, animate: false });
     }
 
     return () => {

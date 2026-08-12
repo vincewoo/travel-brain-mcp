@@ -75,6 +75,22 @@ export interface Point {
   longitude: number | null;
 }
 
+/** A drawable point: the same shape as `Point` once the null coordinates have been filtered out. */
+export interface PlacedPoint {
+  latitude: number;
+  longitude: number;
+}
+
+export interface GeoBounds {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+  center: PlacedPoint;
+  /** How many of the points offered actually had coordinates. */
+  count: number;
+}
+
 export function validInstant(value: Date | string | number, name: string): Date;
 export function localDateTime(value: Date | string | number, timezone: string): LocalDateTime;
 export function timelineInstant(item: ClockItem): string | null;
@@ -113,3 +129,5 @@ export function planDays<T extends ClockItem & { place_id?: string | null }>(inp
 export function researchFreshness(items: ResearchLike[] | null | undefined, now?: Date): string;
 export function dateRange(start: string | null, end: string | null): string[];
 export function haversineMeters(from: Point | null, to: Point | null): number | null;
+export function geoBounds(points: (Point | null | undefined)[] | null | undefined): GeoBounds | null;
+export function bearingDegrees(from: Point | null, to: Point | null): number | null;

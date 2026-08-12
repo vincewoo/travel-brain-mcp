@@ -152,3 +152,65 @@ main { flex: 1 1 auto; padding-bottom: calc(20px + var(--safe-bottom)); }
 /* Distance sits where a time sits in a timeline, so a nearby list scans like the itinerary does. */
 .distance-gutter { flex: 0 0 auto; color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
 .footnote { padding: 9px 14px; border-top: 1px solid var(--border-inner); color: var(--muted); font-size: var(--type-small); }
+
+/* Maps.
+ *
+ * Two renderings of the same thing, so they are sized and framed identically: the traveller should
+ * not feel they have lost a feature when the tiles stop arriving, only the basemap under it. Both
+ * sit flush in a container, edge to edge, because a map with a margin looks like a picture of a map.
+ */
+.map-panel { display: flex; flex-direction: column; }
+.tile-map, .offline-map { width: 100%; display: block; background: var(--surface-sunken); }
+.offline-map { height: auto; }
+.offline-map.dial { max-width: 190px; margin: 10px auto; }
+
+/* Nothing in the schematic is decorative: the thread is the straight line whose length the scale
+   bar measures, and the halo is the only thing on screen that means "you". */
+.offline-map-thread { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.offline-map-halo { fill: var(--info-bg); stroke: var(--info); stroke-width: 1.5; }
+.offline-map-label { fill: var(--muted); font-size: 9.5px; font-weight: 500; }
+.offline-map-index { font-size: 10px; font-weight: 700; }
+.offline-map-scale, .offline-map-compass {
+  fill: var(--faint); font-size: 9.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.offline-map-bar { stroke: var(--faint); stroke-width: 1.5; }
+
+/* Pins on the tile map. Sized for a thumb, not a cursor — the whole app is. */
+.map-pin {
+  width: 22px; height: 22px; border-radius: var(--radius-pill); border: 2px solid var(--surface);
+  display: grid; place-items: center; cursor: pointer; box-shadow: 0 1px 3px rgb(0 0 0 / .3);
+  color: var(--ink-text); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.map-pin.muted { background: var(--faint); }
+.map-pin.info { background: var(--info); }
+.map-pin.warning { background: var(--warning); }
+.map-pin.danger { background: var(--danger); }
+.map-pin.ok { background: var(--ok); }
+.map-pin.muted-fill { background: var(--surface); color: var(--muted); }
+.map-origin {
+  width: 15px; height: 15px; border-radius: var(--radius-pill);
+  background: var(--text); border: 3px solid var(--surface); box-shadow: 0 0 0 3px var(--info-bg);
+}
+
+/* What the map cannot show, said in words: how many stops had no coordinates, and whether the
+   thing on screen has a basemap under it at all. */
+.map-note {
+  padding: 8px 14px; border-top: 1px solid var(--border-inner);
+  color: var(--muted); font-size: var(--type-small);
+}
+.map-consent {
+  display: flex; flex-direction: column; gap: 9px; align-items: flex-start;
+  padding: 12px 14px; border-top: 1px solid var(--border-inner); background: var(--surface-sunken);
+}
+.map-consent p { color: var(--muted); font-size: var(--type-small); max-width: 46ch; }
+
+/* The way out to a real map app, at the bottom of a detail block. */
+.map-links { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 2px; }
+
+/* MapLibre's own chrome, pulled back to this app's palette so it does not arrive looking borrowed.
+   The attribution stays visible: rendering it is the licence condition for the tiles. */
+.maplibregl-ctrl-attrib {
+  background: var(--surface); color: var(--muted); font-size: 10px;
+}
+.maplibregl-ctrl-attrib a { color: var(--muted); }
+.maplibregl-ctrl-group { border-radius: var(--radius-control); overflow: hidden; }

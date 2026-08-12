@@ -141,6 +141,12 @@ offline reference sheet the dashboard has no reason to carry — local-script ad
 confirmation codes, straight-line distance. What it must never mirror is the dashboard's writes:
 every "Mark done", "Skip" and "Ask Claude" affordance stays out until the Phase 2 outbox exists.
 
+Maps are the phone's, not the dashboard's, and they degrade rather than disappear: `OfflineMap` is
+dependency-free SVG in the shell, drawing true relative positions and a haversine-measured scale bar
+with no basemap, and `MapPanel` reaches MapLibre through a dynamic `import()` so the library never
+enters the cold-start bundle — a test asserts the split. Tiles are OpenFreeMap, opted into once
+(`maps:enabled`), never cached, and never a grey grid when the radio is off.
+
 It is its own OAuth 2.1 client; the shell is public and holds no trip data. Phase 1 is read-only.
 Phase 2 adds an outbox limited to writes that append or record what already happened — the
 `client_op_id` idempotency on `add_place`, `record_journal_note`, `mark_place_visited`, and

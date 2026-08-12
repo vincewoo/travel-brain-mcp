@@ -147,6 +147,15 @@ export interface LocationView {
   age_minutes?: number;
 }
 
+/**
+ * Where the traveller is, once it is good enough to draw or route from: the device's own GPS, or a
+ * *fresh* server-known position. A stale fix never becomes an origin — see `App.tsx`.
+ */
+export interface Origin {
+  latitude: number;
+  longitude: number;
+}
+
 export interface Snapshot {
   trip: Trip;
   itinerary: ItineraryItem[];

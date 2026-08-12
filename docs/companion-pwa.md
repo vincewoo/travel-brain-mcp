@@ -260,7 +260,7 @@ seven days unless the app is installed. Onboarding has to insist on it.
   operator step, in the root `README.md`.
 - **Phase 1 (read-only PWA) — done.** `ui/travel-companion`: OAuth via the MCP client SDK,
   snapshot into IndexedDB, Now / Plan / Places / Card, local search, staleness banner, service
-  worker, install hint, and erase-from-device.
+  worker, install hint, erase-from-device, and maps (see below).
 - **Phase 2 (capture) — next.** Outbox, the five safe writes, needs-attention list.
 - **Phase 3.** "Ask Claude" handoff, photos into Supabase Storage, pending-proposal display.
 
@@ -270,15 +270,51 @@ It reads. There is no capture yet, so a journal note or a Mark Done still needs 
 connection. The `client_op_id` plumbing exists ahead of that so Phase 2 is the outbox and nothing
 else.
 
-Two things are worth knowing before the trip. The shell is ~143 KB gzipped, most of it the MCP
+Two things are worth knowing before the trip. The shell is ~153 KB gzipped, most of it the MCP
 client SDK, fetched once and then precached — fine on arrival wifi, slow on a bad hotel connection.
 And the app derives nearby distances from the device GPS only when the traveller taps **Locate**;
 it does not track position, and Phase 1 writes nothing back, so the server's last-known location is
 only ever as fresh as Claude last made it.
 
+## Maps
+
+The coordinates are already on the phone — `trip_offline_places` decomposes the PostGIS point, so
+every saved place arrives with a latitude and longitude. Not drawing them was leaving the traveller
+to read a sorted list of metres while standing on a corner. There are three maps: today's stops in
+timeline order on **Now**, a map/list toggle on **Places** over whatever the filters have already
+narrowed to, and a mini-map on each lodging address on **Card**.
+
+Two rules make this compatible with an app that has to work with the radio off.
+
+**Offline draws a schematic, not a basemap.** `OfflineMap` is hand-drawn SVG with no dependency,
+shipped in the shell: true relative positions, the traveller's own position, and a scale bar
+measured with the same `haversineMeters` the nearby list uses. One place plus a known position
+becomes a bearing dial — *that way, 1.6 km*. It is what renders when there is no connection, while
+the map chunk loads, and if tiles fail. What is never rendered is a grid of grey squares.
+
+**The library is not in the shell.** MapLibre is roughly as large again as the whole rest of the
+app, so `MapPanel` reaches it through a dynamic `import()` and it lands in its own chunk — 249 KB
+gzipped that a traveller on bad hotel wifi never fetches. Tiles need a working connection anyway, so
+the code arrives at the same moment the tiles do. A test in `test/companion-app.test.mjs` asserts
+the split in both directions.
+
+Tiles come from OpenFreeMap: no API key, no account, no request cap, commercial use allowed, and
+its Liberty style already labels in `name:latin` *and* `name:nonlatin`, so Chinese place names
+appear beside the Latin ones — `address_local`'s reasoning, applied to the map. Attribution is left
+on because rendering it is the licence condition. Because a tile request tells a third party which
+corner of which city is on screen, the first map asks before loading one and remembers the answer in
+`maps:enabled`; the Card tab can turn it back off, and `forgetDevice` clears it with everything
+else.
+
+Still not built: **offline tiles**. Nothing is cached — the service worker already passes
+cross-origin requests straight through, so no change was needed to keep that true. A pre-downloaded
+PMTiles archive for the trip's bounding box is the obvious next step if the schematic proves too
+thin in Guilin, and the OpenFreeMap style URL swaps for a self-hosted archive without touching
+anything else.
+
 ## Deliberately not building
 
-Offline maps or tiles. Any model in the app. Multi-trip sync. Editing planned times offline. A
+Offline map tiles, and any model in the app. Multi-trip sync. Editing planned times offline. A
 second MCP service, a frontend database, or any service credential in the browser — the same
 boundaries `docs/architecture.md` already draws for the dashboard.
 

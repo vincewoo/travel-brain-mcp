@@ -251,3 +251,50 @@ export function haversineMeters(from, to) {
     + Math.cos(toRadians(from.latitude)) * Math.cos(toRadians(to.latitude)) * Math.sin(deltaLon / 2) ** 2;
   return Math.round(2 * earthRadius * Math.asin(Math.sqrt(a)));
 }
+
+/**
+ * The box a set of points fits in, and its centre.
+ *
+ * Points with a missing coordinate are skipped rather than treated as (0, 0) — an ungeocoded place
+ * is normal (`trip_offline_places` returns them with null coordinates) and dropping one off the
+ * Gulf of Guinea would be worse than leaving it off the drawing. `null` when nothing is mappable.
+ */
+export function geoBounds(points) {
+  const usable = (points ?? []).filter(
+    (point) => point?.latitude != null && point?.longitude != null
+  );
+  if (!usable.length) return null;
+  const latitudes = usable.map((point) => point.latitude);
+  const longitudes = usable.map((point) => point.longitude);
+  const south = Math.min(...latitudes);
+  const north = Math.max(...latitudes);
+  const west = Math.min(...longitudes);
+  const east = Math.max(...longitudes);
+  return {
+    south,
+    west,
+    north,
+    east,
+    center: { latitude: (south + north) / 2, longitude: (west + east) / 2 },
+    count: usable.length,
+  };
+}
+
+/**
+ * Initial compass bearing from one point to another, in degrees clockwise from north.
+ *
+ * Straight-line, like `haversineMeters` and for the same reason: offline the phone can say "that
+ * way, 600 m" and cannot say "second left after the market".
+ */
+export function bearingDegrees(from, to) {
+  if (from?.latitude == null || from?.longitude == null || to?.latitude == null || to?.longitude == null) {
+    return null;
+  }
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const fromLat = toRadians(from.latitude);
+  const toLat = toRadians(to.latitude);
+  const deltaLon = toRadians(to.longitude - from.longitude);
+  const y = Math.sin(deltaLon) * Math.cos(toLat);
+  const x = Math.cos(fromLat) * Math.sin(toLat) - Math.sin(fromLat) * Math.cos(toLat) * Math.cos(deltaLon);
+  return (((Math.atan2(y, x) * 180) / Math.PI) + 360) % 360;
+}

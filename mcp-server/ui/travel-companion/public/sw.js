@@ -11,7 +11,12 @@
  * while an underground train still gets the last known shell.
  */
 
-const VERSION = "travel-companion-v1";
+// Bumping this drops every previously cached entry on activate. That is not housekeeping here: an
+// earlier build asked for a map worker the bundle never emitted, the server answered the missing
+// path with the shell under a 200, and `cacheFirst` stored that HTML under a `.mjs` URL. The URL
+// does not change when the build is fixed, so without a new cache name the stale HTML would go on
+// being served to everyone who already has it and the map would stay broken.
+const VERSION = "travel-companion-v2";
 const SHELL = "/app/";
 
 self.addEventListener("install", (event) => {
@@ -56,6 +61,11 @@ self.addEventListener("fetch", (event) => {
   // Anything that is not a plain read of this app's own files — the MCP endpoint above all — is
   // left to the network, where a failure is visible instead of quietly served from a cache.
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
+  // A worker script is left to the network. It is only ever needed with a live connection — the map
+  // it drives cannot draw tiles offline anyway, and `MapPanel` shows the schematic instead — so
+  // there is nothing to gain by caching it, and standing between a `new Worker()` and its script is
+  // a good way to turn a bad response into a map with no tiles and no error worth the name.
+  if (request.destination === "worker" || request.destination === "sharedworker") return;
   if (request.mode === "navigate" && url.pathname.startsWith("/app")) {
     event.respondWith(navigationResponse(request));
     return;

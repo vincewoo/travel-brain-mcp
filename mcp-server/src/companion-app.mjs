@@ -40,6 +40,19 @@ function staticHeaders(res, path) {
   res.setHeader('Cache-Control', path.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
 }
 
+/**
+ * Whether a path names a file rather than a client-side route.
+ *
+ * The last segment carrying a dot is the whole test, and it is deliberately crude: every route this
+ * app owns (`/app`, `/app/callback`) is a bare word, and every asset it serves is fingerprinted or
+ * suffixed. Getting it wrong in the safe direction costs a 404 on a route nobody has; getting it
+ * wrong the other way is what this exists to prevent.
+ */
+export function isFileRequest(pathname) {
+  const last = pathname.split('/').pop() ?? '';
+  return last.includes('.');
+}
+
 export function installCompanionRoutes(app, options = {}) {
   const directory = companionDirectory(options.companionPath);
   if (!directory) {
@@ -53,7 +66,13 @@ export function installCompanionRoutes(app, options = {}) {
 
   // Client-side routes, `/app/callback` above all: the OAuth redirect has to resolve to the shell
   // so the app can finish the token exchange.
-  app.get(/^\/app(\/.*)?$/, (_req, res) => {
+  app.get(/^\/app(\/.*)?$/, (req, res, next) => {
+    // ...but only routes. A request for a file that is not there has to 404. Answering it with the
+    // shell means a missing asset arrives as HTML under a 200, which the browser then fails to use
+    // for whatever it asked for and the service worker happily caches — a missing map worker
+    // presented as a working response, and a bug that stays invisible until someone reads a
+    // console. A 404 says what happened at the moment it happens.
+    if (isFileRequest(req.path)) return next();
     res.set('Cache-Control', 'no-cache');
     res.sendFile('index.html', { root: directory });
   });

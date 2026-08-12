@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { LngLatBounds, Map as MapLibreMap, Marker, NavigationControl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { createTileWatch, MAX_ZOOM, STYLE_URL } from "../map-source.mjs";
+import { BASEMAP_TIMEOUT_MS, createTileWatch, MAX_ZOOM, STYLE_URL } from "../map-source.mjs";
 import type { MapPoint } from "./OfflineMap";
 import type { Origin } from "../types";
 
@@ -100,11 +100,21 @@ export default function TileMap({ points, origin, height = 220, interactive = tr
     // map that has already painted keeps its place when one tile goes missing.
     const watch = createTileWatch();
     instance.on("data", (event) => {
-      if (event.dataType === "source" && "tile" in event) watch.drew();
+      if (event.dataType !== "source" || !("tile" in event)) return;
+      // Only the vector source counts as the basemap drawing. The Liberty style also carries a
+      // Natural Earth raster backdrop, which loads on the main thread and so keeps painting even
+      // when the worker that fetches vector tiles is gone — the exact failure worth catching.
+      const source = event.sourceId ? instance.getSource(event.sourceId) : undefined;
+      if (source?.type === "vector") watch.drew();
     });
     instance.on("error", (event) => {
       if (watch.errored(event)) fail.current?.();
     });
+    // Errors only catch a basemap that fails loudly. A worker that never starts makes no requests
+    // and raises nothing, so the deadline is what turns that into the schematic.
+    const deadline = setTimeout(() => {
+      if (!watch.hasPainted() && watch.giveUp()) fail.current?.();
+    }, BASEMAP_TIMEOUT_MS);
 
     const markers: Marker[] = [];
     for (const point of placed) {
@@ -130,6 +140,7 @@ export default function TileMap({ points, origin, height = 220, interactive = tr
     }
 
     return () => {
+      clearTimeout(deadline);
       for (const marker of markers) marker.remove();
       // Releasing the WebGL context matters: browsers cap how many can exist at once, and this app
       // mounts a map inside rows that come and go.

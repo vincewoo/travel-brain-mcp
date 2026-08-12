@@ -1,0 +1,44 @@
+<!--
+  The companion's app icon: a folded paper map, drawn as three creased panels with a route across
+  them. The PNGs beside this file are rendered from it, so this is the source to edit.
+
+  Two constraints shape the geometry. The 512 is declared `maskable`, so Android may crop it to a
+  circle of 80% width — every part of the map therefore stays inside r=205 of centre, and only the
+  background reaches the edge. And the icon has to survive being drawn at 48px in a home-screen
+  grid, so the whole thing is four flat shapes: the zigzag silhouette carries the recognition and
+  the route is a single stroke heavy enough not to disappear.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="38%" r="78%">
+      <stop offset="0" stop-color="#17233f" />
+      <stop offset="1" stop-color="#0b1120" />
+    </radialGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8fafc" />
+      <stop offset="1" stop-color="#e2e8f0" />
+    </linearGradient>
+    <linearGradient id="crease" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c8d4e4" />
+      <stop offset="1" stop-color="#aebfd4" />
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#sky)" />
+
+  <!-- The panels fold at x=206 and x=306; the middle one turns away from the light and so is the
+       darker of the two tones. Their edges alternate by 22px, which is what makes the silhouette
+       read as paper rather than as a card. -->
+  <g>
+    <path d="M106 172 L206 128 L206 340 L106 384 Z" fill="url(#paper)" />
+    <path d="M206 128 L306 172 L306 384 L206 340 Z" fill="url(#crease)" />
+    <path d="M306 172 L406 128 L406 340 L306 384 Z" fill="url(#paper)" />
+  </g>
+
+  <!-- One route, winding, ending in the place worth going to. The turns are quadratics rather than
+       corners: struck as a straight polyline the same path reads as a line chart, and rounding the
+       apexes just enough turns it back into a trail. -->
+  <path d="M150 340 Q 176 314 198 302 Q 218 310 228 322 Q 250 292 270 258 Q 292 262 302 272 Q 330 240 354 202"
+        fill="none" stroke="#38bdf8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="354" cy="202" r="22" fill="#0ea5e9" />
+</svg>

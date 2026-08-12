@@ -104,6 +104,7 @@ test('a missing file 404s instead of being answered with the shell', () => {
 test('the worker script is left to the network rather than served from the cache', async () => {
   const worker = await readFile(new URL('../ui/travel-companion/dist/sw.js', import.meta.url), 'utf8');
   assert.match(worker, /destination === "worker"/);
-  // The cache name has to move when a poisoned entry needs evicting from installs already out there.
-  assert.match(worker, /travel-companion-v2/);
+  // The cache name has to move when a poisoned entry needs evicting from installs already out there,
+  // and equally when an unhashed asset — the icons, the manifest — is rewritten in place.
+  assert.match(worker, /travel-companion-v3/);
 });

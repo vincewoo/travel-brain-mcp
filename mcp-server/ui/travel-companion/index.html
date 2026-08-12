@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Travel Brain" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,6 +13,27 @@
     <link rel="icon" href="/app/icon-192.png" />
     <link rel="apple-touch-icon" href="/app/icon-192.png" />
     <title>Travel Brain Companion</title>
+    <script>
+      /*
+       * The stored appearance choice, applied before the first paint.
+       *
+       * `src/theme.ts` owns everything about this except the timing, and the timing is the whole
+       * reason the script is here: the app's own code runs after the stylesheet has painted, so a
+       * traveller who chose dark would get a white screen for a frame on every cold start. Inline
+       * and synchronous is the only place early enough. The key and the two colours are mirrored
+       * from that module.
+       */
+      try {
+        var stored = localStorage.getItem("travel-brain:theme");
+        var choice = stored === "light" || stored === "dark" ? stored : "system";
+        if (choice !== "system") document.documentElement.dataset.theme = choice;
+        var dark = choice === "dark"
+          || (choice === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.querySelector('meta[name="theme-color"]').content = dark ? "#20211e" : "#ffffff";
+      } catch (error) {
+        /* No storage, or no `matchMedia`: the system setting is a perfectly good answer. */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -313,7 +313,6 @@ export default function App() {
             <PlanView
               snapshot={snapshot}
               plan={plan}
-              cards={cards}
               days={days}
               selected={selected}
               today={here.localDate}

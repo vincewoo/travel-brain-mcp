@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
-import { AlertRow, IssueRow, PlaceRow, TimelineRow } from "../components/rows";
+import { AlertRow, IssueRow, TimelineRow } from "../components/rows";
 import { NoteEmpty } from "../components/states";
 import { dateLabel, dateTimeLabel, humanize, joinMeta, plural, shortDateLabel } from "../../../shared/format";
 import { relatedIssues, withAlerts } from "../../../shared/timeline";
-import type { PlaceCard, PlanView as Plan } from "../derive";
+import type { PlanView as Plan } from "../derive";
 import { dayView, journalForDate, reservationsForItem } from "../derive";
 import type { Place, Snapshot } from "../types";
 
@@ -20,11 +20,15 @@ import type { Place, Snapshot } from "../types";
  * Each day carries what that day needs offline — its timeline with alerts inline, the reservations
  * that belong to no item, the notes written on it — so scrolling to a date is scrolling to
  * everything about it.
+ *
+ * The shortlist waiting for a slot is deliberately not here. The phone does not plan — there is no
+ * way to drop a saved place onto a day from this app — so a tray of unscheduled places at the
+ * bottom of the plan is a list you can only look at. It lives in Places, where the rest of the
+ * shortlist already is.
  */
-export function PlanView({ snapshot, plan, cards, days, selected, today, places, onSelect }: {
+export function PlanView({ snapshot, plan, days, selected, today, places, onSelect }: {
   snapshot: Snapshot;
   plan: Plan;
-  cards: PlaceCard[];
   days: string[];
   selected: string;
   today: string;
@@ -33,7 +37,6 @@ export function PlanView({ snapshot, plan, cards, days, selected, today, places,
 }) {
   const stripRef = useRef<HTMLDivElement>(null);
   const dayRefs = useRef(new Map<string, HTMLElement>());
-  const cardsByPlace = new Map(cards.map((card) => [card.place.id, card]));
 
   // Keep the selected day's chip in view when the tab opens on a date deep into a two-week trip.
   // The day itself is not scrolled to on open — that would bury the trip's issues under a day.
@@ -55,7 +58,6 @@ export function PlanView({ snapshot, plan, cards, days, selected, today, places,
         <span className="view-count">{joinMeta(
           plural(plan.days.length, "day"),
           `${plan.scheduledCount} scheduled`,
-          `${plan.unscheduled.length} waiting`,
           plural(plan.issues.length, "issue"),
         )}</span>
       </div>
@@ -99,19 +101,6 @@ export function PlanView({ snapshot, plan, cards, days, selected, today, places,
         places={places}
       />)}
     </div> : <NoteEmpty title="No trip days yet" detail="Set trip dates or add itinerary items to create day sections." />}
-
-    {plan.unscheduled.length ? <section className="container">
-      <div className="container-head">
-        <div className="head-label">
-          <strong>Unscheduled</strong>
-          <span>{plural(plan.unscheduled.length, "saved place")}</span>
-        </div>
-      </div>
-      {plan.unscheduled.map((link) => {
-        const card = cardsByPlace.get(link.place_id);
-        return card ? <PlaceRow key={link.place_id} card={card} /> : null;
-      })}
-    </section> : <NoteEmpty title="Tray is clear" detail="Every saved place is scheduled or set aside." />}
   </div>;
 }
 

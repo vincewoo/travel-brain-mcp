@@ -321,7 +321,17 @@ replaced asked whether the error message contained the word "style", which match
 style URL contains `/styles/`; tiles are served from `/planet/` and so never matched, and a blocked
 or captive-portalled basemap left an empty rectangle instead of the schematic. `createTileWatch`
 adds the asymmetry that matters: a map that has already painted keeps its place when one tile goes
-missing, while a map that has never painted gives way after `TILE_FAILURE_LIMIT`. Both live in
+missing, while a map that has never painted gives way after `TILE_FAILURE_LIMIT`.
+
+Errors alone are not enough, though, because the worst failure is silent. MapLibre fetches and
+parses vector tiles inside a web worker; a worker that never starts issues no requests and raises
+no `error`, so nothing is left to classify. The map goes on painting what the main thread already
+had — the style's background, and Liberty's Natural Earth raster backdrop — while the data that
+matters never arrives, which looks like a working map that has simply run out of detail.
+`BASEMAP_TIMEOUT_MS` catches that whole class without diagnosing it: if nothing has drawn by the
+deadline, the schematic takes over. For the same reason `drew()` is called only for the *vector*
+source — counting the raster backdrop as success would grant immunity to exactly the failure being
+watched for. All of it lives in
 `map-source.mjs` — plain JavaScript, outside the MapLibre chunk, so
 `test/companion-map-failure.test.mjs` can exercise the rules directly without a DOM.
 

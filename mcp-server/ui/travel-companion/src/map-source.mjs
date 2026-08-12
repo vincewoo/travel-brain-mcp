@@ -34,6 +34,20 @@ export const MAX_ZOOM = SOURCE_MAX_ZOOM + 2;
 /** How many tile requests may fail before a map that has never drawn anything gives up. */
 export const TILE_FAILURE_LIMIT = 4;
 
+/**
+ * How long a basemap may show nothing before the schematic takes over.
+ *
+ * Counting errors is not enough on its own. MapLibre fetches and parses vector tiles inside a web
+ * worker, and a worker that never starts makes no requests and raises no `error` event — the map
+ * simply sits there, painting whatever the main thread already had (the style's background, and any
+ * raster layer) while the data that matters never arrives. Nothing in an error-driven rule ever
+ * fires. A deadline catches that whole class without needing to know what went wrong.
+ *
+ * Long enough not to punish a slow connection that is still working, short enough that a traveller
+ * checking where they are does not sit looking at an empty rectangle.
+ */
+export const BASEMAP_TIMEOUT_MS = 12_000;
+
 /** `/{z}/{x}/{y}.pbf` and friends — the shape of a tile request, as opposed to the descriptor that
  *  lists them or the glyphs that label them. */
 const TILE_PATH = /\/\d+\/\d+\/\d+\.(?:pbf|mvt|png|jpe?g|webp)(?:\?|$)/;
@@ -85,10 +99,26 @@ export function createTileWatch({ limit = TILE_FAILURE_LIMIT } = {}) {
   let failures = 0;
   let settled = false;
   return {
-    /** A tile arrived: the basemap works, and any earlier stumbles no longer count against it. */
+    /**
+     * A tile arrived: the basemap works, and any earlier stumbles no longer count against it.
+     *
+     * Only ever call this for the source that carries the map's actual content. A raster backdrop
+     * painting while the vector data fails is precisely the state this whole module exists to
+     * notice, and treating it as success would grant immunity to the failure being watched for.
+     */
     drew() {
       painted = true;
       failures = 0;
+    },
+    /** Whether anything has drawn yet, for the caller's deadline. */
+    hasPainted() {
+      return painted;
+    },
+    /** Claim the one fallback, so a deadline and an error cannot both fire it. */
+    giveUp() {
+      if (settled) return false;
+      settled = true;
+      return true;
     },
     errored(event) {
       if (settled) return false;

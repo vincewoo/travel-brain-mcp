@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  BASEMAP_TIMEOUT_MS,
   classifyMapError,
   createTileWatch,
   MAX_ZOOM,
@@ -80,6 +81,34 @@ test('a dead style falls back immediately, painted or not', () => {
   const watch = createTileWatch();
   watch.drew();
   assert.equal(watch.errored(styleFailure), true);
+});
+
+test('a silent basemap is caught by the deadline, since it raises no error to classify', () => {
+  // The failure that error-driven rules miss entirely: MapLibre parses vector tiles in a worker,
+  // and a worker that never starts makes no requests and reports nothing. The map keeps painting
+  // whatever the main thread already had — the style background, a raster backdrop — so `errored`
+  // is never called even once.
+  const watch = createTileWatch();
+  assert.equal(watch.hasPainted(), false);
+  assert.equal(watch.giveUp(), true, 'the deadline should be able to claim the fallback');
+  assert.equal(watch.giveUp(), false, 'and only once');
+  assert.equal(watch.errored(styleFailure), false, 'a later error must not fall back twice');
+});
+
+test('a raster backdrop must not be mistaken for the basemap drawing', () => {
+  // `drew` is only ever called for the vector source; `TileMap` checks the source type before
+  // calling it. Asserted here as the contract that check depends on: nothing has painted until
+  // the content source does, so the deadline still fires under a happily rendering backdrop.
+  const watch = createTileWatch();
+  assert.equal(watch.hasPainted(), false);
+  watch.drew();
+  assert.equal(watch.hasPainted(), true);
+  assert.equal(watch.giveUp(), true, 'painting does not itself disarm the fallback');
+});
+
+test('the basemap deadline is patient enough for a slow connection', () => {
+  assert.ok(BASEMAP_TIMEOUT_MS >= 8000, 'a working but slow basemap must not be cut off');
+  assert.ok(BASEMAP_TIMEOUT_MS <= 20000, 'an empty rectangle must not outlast the traveller');
 });
 
 test('the zoom ceiling stays close to the data, not to the library default', () => {

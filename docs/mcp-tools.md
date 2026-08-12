@@ -14,7 +14,11 @@ persisted as `timestamptz` and rendered back in the trip's zone.
 Find trips the current actor owns or belongs to.
 
 ### `get_trip`
-Return trip details plus itinerary, places, reservations, visits, journal entries, research, and recommendations.
+Return trip details plus itinerary, tasks, places, reservations, visits, journal entries, research, and recommendations.
+
+### `get_trip_tasks`
+Input: `{ trip_id }`. Returns `{ tasks[] }`, with open tasks first, dated tasks before undated tasks,
+and completed work last.
 
 ### `search_travel_brain`
 Search semantic memories, research findings, journal notes, and recommendations. v0.1 is lexical; vector retrieval is a later drop-in enhancement.
@@ -49,6 +53,16 @@ Schedule an item with planned timing and flexibility.
 
 ### `update_itinerary_item`
 Update planned/actual timing, status, flexibility, priority, or notes. Does not erase the distinction between planned and actual.
+
+### `add_trip_task`
+Input: `{ trip_id, title, notes?, due_date?, date_kind?: "due" | "opens" }`. Adds an untimed
+planning TODO. `due_date` is optional; `date_kind` distinguishes a real deadline from the date a
+booking or purchase window opens and defaults to `due`.
+
+### `update_trip_task`
+Input: `{ trip_task_id, title?, notes?, due_date?, date_kind?, completed? }`. Edits a task or checks
+and unchecks it. Repeating the same completion state is idempotent. Completion records the current
+actor and server time. This changes Travel Brain only; it never makes the reservation or purchase.
 
 ### `remove_itinerary_item`
 Input: `{ itinerary_item_id: uuid }`. Deletes a plan row outright, for replanning where a dropped idea is cruft rather than a record.
@@ -102,7 +116,7 @@ Input: `{ trip_id, latitude? + longitude? | use_current_location: true, radius_m
 
 ### `get_plan_overview`
 
-Input: `{ trip_id }`. Returns `{ trip, total_days, scheduled_count, days[], issues[], unscheduled_places[] }`. Deterministic issues cover overlaps, fixed-commitment overlaps, missing planned starts, priority-5 unscheduled places, stale volatile research, and a configured `trip.metadata.minimum_buffer_minutes` when present.
+Input: `{ trip_id }`. Returns `{ trip, total_days, scheduled_count, days[], issues[], unscheduled_places[], tasks[] }`. Deterministic issues cover overlaps, fixed-commitment overlaps, missing planned starts, priority-5 unscheduled places, stale volatile research, and a configured `trip.metadata.minimum_buffer_minutes` when present.
 
 ### `get_places_overview`
 
@@ -122,7 +136,7 @@ Input: `{ trip_id, include_global_preferences?: true }`. Returns stored `{ lesso
 
 ### `get_offline_snapshot`
 
-Input: `{ trip_id: uuid }`. Returns `{ trip, itinerary, reservations, places, visits, journal, research, recommendations, lessons, preferences, current_state, location, server_time, snapshot_etag }`.
+Input: `{ trip_id: uuid }`. Returns `{ trip, itinerary, tasks, reservations, places, visits, journal, research, recommendations, lessons, preferences, current_state, location, server_time, snapshot_etag }`.
 
 One trip, whole, in one round trip — the offline companion's entire read protocol. It is `get_trip` plus the three things a cached copy needs and that call cannot give:
 
@@ -201,4 +215,4 @@ Input: `{ trip_id?: uuid, date?: YYYY-MM-DD, view?: "today" | "plan" | "places" 
 
 Returns `{ dashboard: { trip_id?, date?, view? } }` and references the `ui://travel-brain/dashboard.html` MCP App resource. `view` deliberately has no schema default: if it is absent, the app chooses a tab from the authoritative trip status (`draft` → Places, `planning` → Plan, `active` → Today, `completed` → Journal, `archived` → Recommendations).
 
-The launcher is read-only. Within the app, Mark Done, Skip, and approved proposal commits call authenticated MCP write tools directly. Optimization, issue repair, place fitting, live food search, freeform memory capture, replanning, and friend-guide generation send a user message to the host model for reasoning.
+The launcher is read-only. Within the app, itinerary status changes, task checkboxes, and approved proposal commits call authenticated MCP write tools directly. Optimization, issue repair, place fitting, live food search, freeform memory capture, replanning, and friend-guide generation send a user message to the host model for reasoning.

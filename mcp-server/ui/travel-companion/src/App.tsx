@@ -20,9 +20,10 @@ import {
   SignInRequiredError,
   sync,
   UnauthorizedError,
+  updateTripTask,
 } from "./mcp";
 import { forgetDevice, KEY, readValue, writeValue } from "./store";
-import type { Snapshot, Tab } from "./types";
+import type { Snapshot, Tab, TripTask } from "./types";
 import { CardView } from "./views/Card";
 import { JournalView } from "./views/Journal";
 import { NowView } from "./views/Now";
@@ -51,6 +52,15 @@ const tripDates = (snapshot: Snapshot) => snapshot.trip.start_date || snapshot.t
   : "Dates not set";
 /** Only worth saying when the trip is on a different clock from the reader — at home it is noise. */
 const zoneNote = (zone: string) => zone === browserZone() ? "" : `Times in ${zoneLabel(zone)}`;
+const taskOrder = (left: TripTask, right: TripTask) => {
+  const completion = Number(Boolean(left.completed_at)) - Number(Boolean(right.completed_at));
+  if (completion) return completion;
+  if (left.completed_at && right.completed_at) {
+    return right.completed_at.localeCompare(left.completed_at);
+  }
+  const due = (left.due_date ?? "9999-12-31").localeCompare(right.due_date ?? "9999-12-31");
+  return due || left.created_at.localeCompare(right.created_at);
+};
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -59,6 +69,7 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [taskBusy, setTaskBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [signedOut, setSignedOut] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
@@ -200,6 +211,29 @@ export default function App() {
     );
   };
 
+  const toggleTask = async (task: TripTask, completed: boolean) => {
+    if (!snapshot || !online) {
+      setError("Reconnect to update planning tasks.");
+      return;
+    }
+    setTaskBusy(task.id);
+    setError(null);
+    try {
+      const saved = await updateTripTask(task.id, completed);
+      const tasks = (snapshot.tasks ?? [])
+        .map((entry) => entry.id === saved.id ? saved : entry)
+        .sort(taskOrder);
+      const next = { ...snapshot, tasks };
+      setSnapshot(next);
+      await writeValue(KEY.snapshot, next);
+    } catch (caught) {
+      if (caught instanceof SignInRequiredError || caught instanceof UnauthorizedError) setSignedOut(true);
+      else setError(caught instanceof Error ? caught.message : "Task update failed.");
+    } finally {
+      setTaskBusy(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="app">
@@ -334,6 +368,9 @@ export default function App() {
               selected={selected}
               today={here.localDate}
               places={places}
+              online={online && !signedOut}
+              taskBusy={taskBusy}
+              onTaskToggle={(task, completed) => void toggleTask(task, completed)}
               onSelect={setSelectedDate}
             />
           ) : (

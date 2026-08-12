@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  addTripTask,
   addPlace,
   markPlaceVisited,
   recommendPlace,
@@ -8,7 +9,8 @@ import {
   rememberPreference,
   saveResearchFinding,
   tripAccess,
-  updatePlace
+  updatePlace,
+  updateTripTask
 } from '../src/db.mjs';
 import { createScriptedSupabase } from './support/scripted-supabase.mjs';
 
@@ -18,6 +20,7 @@ const viewerId = '33333333-3333-4333-8333-333333333333';
 const tripId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const placeId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const itemId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const taskId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 function context(actorId, steps) {
   const supabase = createScriptedSupabase(steps);
@@ -45,6 +48,59 @@ test('owner and editor can edit; viewer and unrelated user cannot', async () => 
     { table: 'trip_members', data: null }
   ]);
   await assert.rejects(() => tripAccess(unrelated.ctx, tripId, false), /Not authorized/);
+});
+
+test('trip tasks preserve deadline versus opening-date semantics', async () => {
+  const scripted = context(ownerId, [
+    { table: 'trips', data: { id: tripId, owner_id: ownerId, timezone: 'Asia/Hong_Kong' } },
+    { table: 'trip_tasks', data: { id: taskId, title: 'Buy train tickets' } }
+  ]);
+  await addTripTask(scripted.ctx, {
+    trip_id: tripId,
+    title: 'Buy train tickets',
+    due_date: '2026-11-20',
+    date_kind: 'opens'
+  });
+  assert.deepEqual(scripted.supabase.calls[1].value, {
+    trip_id: tripId,
+    title: 'Buy train tickets',
+    notes: null,
+    due_date: '2026-11-20',
+    date_kind: 'opens',
+    created_by: ownerId
+  });
+});
+
+test('trip task completion records the actor and can be unchecked directly', async () => {
+  const completedAt = '2026-08-12T18:30:00.000Z';
+  const completing = context(ownerId, [
+    { table: 'trip_tasks', data: { id: taskId, trip_id: tripId, completed_at: null } },
+    { table: 'trips', data: { id: tripId, owner_id: ownerId, timezone: 'Asia/Hong_Kong' } },
+    { table: 'trip_tasks', data: { id: taskId, completed_at: completedAt, completed_by: ownerId } }
+  ]);
+  await updateTripTask(completing.ctx, { trip_task_id: taskId, completed: true }, completedAt);
+  assert.deepEqual(completing.supabase.calls[2].value, {
+    completed_at: completedAt,
+    completed_by: ownerId
+  });
+
+  const reopening = context(ownerId, [
+    { table: 'trip_tasks', data: { id: taskId, trip_id: tripId, completed_at: completedAt, completed_by: ownerId } },
+    { table: 'trips', data: { id: tripId, owner_id: ownerId, timezone: 'Asia/Hong_Kong' } },
+    { table: 'trip_tasks', data: { id: taskId, completed_at: null, completed_by: null } }
+  ]);
+  await updateTripTask(reopening.ctx, { trip_task_id: taskId, completed: false });
+  assert.deepEqual(reopening.supabase.calls[2].value, { completed_at: null, completed_by: null });
+});
+
+test('repeating the same trip task completion is an idempotent read', async () => {
+  const task = { id: taskId, trip_id: tripId, completed_at: '2026-08-12T18:30:00.000Z', completed_by: ownerId };
+  const scripted = context(ownerId, [
+    { table: 'trip_tasks', data: task },
+    { table: 'trips', data: { id: tripId, owner_id: ownerId, timezone: 'Asia/Hong_Kong' } }
+  ]);
+  assert.equal(await updateTripTask(scripted.ctx, { trip_task_id: taskId, completed: true }), task);
+  assert.equal(scripted.supabase.calls.some((call) => call.operation === 'update'), false);
 });
 
 test('firsthand recommendation requires a recorded visit', async () => {

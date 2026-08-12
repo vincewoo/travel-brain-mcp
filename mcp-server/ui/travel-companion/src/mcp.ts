@@ -1,7 +1,7 @@
 import { Client, StreamableHTTPClientTransport, UnauthorizedError } from "@modelcontextprotocol/client";
 import { CompanionAuthProvider, hasStoredCredentials, SignInRequiredError } from "./auth";
 import { KEY, readValue, writeValue } from "./store";
-import type { Snapshot, TripListEntry } from "./types";
+import type { Snapshot, TripListEntry, TripTask } from "./types";
 
 /**
  * The network half of the companion, and the only part that can fail because of signal.
@@ -112,6 +112,21 @@ export async function sync(requestedTripId?: string): Promise<SyncResult> {
     await writeValue(KEY.syncedAt, syncedAt);
     await writeValue(KEY.tripId, tripId);
     return { snapshot, syncedAt, unchanged };
+  } finally {
+    await client.close();
+  }
+}
+
+/** A connected checkbox write: deterministic, idempotent, and never routed through a model. */
+export async function updateTripTask(tripTaskId: string, completed: boolean): Promise<TripTask> {
+  if (!(await hasStoredCredentials())) throw new SignInRequiredError();
+  const client = await connect();
+  try {
+    const result = await callTool<{ task: TripTask }>(client, "update_trip_task", {
+      trip_task_id: tripTaskId,
+      completed,
+    });
+    return result.task;
   } finally {
     await client.close();
   }

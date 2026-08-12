@@ -57,7 +57,8 @@ function snapshotSteps(overrides = {}) {
     { table: 'research_items', data: overrides.research ?? [] },
     { table: 'recommendations', data: overrides.recommendations ?? [] },
     { table: 'memories', data: overrides.memories ?? [] },
-    { table: 'current_trip_state', data: overrides.currentState ?? null }
+    { table: 'current_trip_state', data: overrides.currentState ?? null },
+    { table: 'trip_tasks', data: overrides.tasks ?? [] }
   ];
 }
 
@@ -67,7 +68,8 @@ test('the offline snapshot carries a whole trip in one call', async () => {
     reservations: [{ id: 'reservation-1', confirmation_code: 'ABC123' }],
     visits: [{ id: 'visit-1', place_id: placeId }],
     research: [{ id: 'research-1', place_id: placeId, research_sources: [] }],
-    recommendations: [{ id: 'recommendation-1', place_id: placeId }]
+    recommendations: [{ id: 'recommendation-1', place_id: placeId }],
+    tasks: [{ id: 'task-1', title: 'Buy train tickets', due_date: '2026-11-20', date_kind: 'opens', completed_at: null }]
   }));
 
   const snapshot = await getOfflineSnapshot(scripted.ctx, tripId);
@@ -78,6 +80,7 @@ test('the offline snapshot carries a whole trip in one call', async () => {
   assert.equal(snapshot.visits.length, 1);
   assert.equal(snapshot.research.length, 1);
   assert.equal(snapshot.recommendations.length, 1);
+  assert.equal(snapshot.tasks[0].title, 'Buy train tickets');
   assert.ok(snapshot.server_time);
   assert.ok(snapshot.snapshot_etag);
   // One tool call, and the traveller has the trip. That is the entire offline read protocol.
@@ -170,9 +173,14 @@ test('the snapshot etag changes when trip content changes and holds when it does
     context(snapshotSteps({ itinerary: [{ id: 'item-1', updated_at: '2026-12-02T00:00:00Z' }] })).ctx,
     tripId
   );
+  const completedTask = await getOfflineSnapshot(
+    context(snapshotSteps({ tasks: [{ id: 'task-1', updated_at: '2026-12-03T00:00:00Z', completed_at: '2026-12-03T00:00:00Z' }] })).ctx,
+    tripId
+  );
 
   assert.equal(first.snapshot_etag, same.snapshot_etag);
   assert.notEqual(first.snapshot_etag, moved.snapshot_etag);
+  assert.notEqual(first.snapshot_etag, completedTask.snapshot_etag);
 });
 
 test('a journal note without a client op id still writes with a single insert', async () => {
@@ -351,7 +359,8 @@ test('the phone derives the same plan issues and days the server read model repo
     { table: 'itinerary_items', data: itinerary },
     { table: 'reservations', data: reservations },
     { table: 'trip_places', data: tripPlaces },
-    { table: 'research_items', data: research }
+    { table: 'research_items', data: research },
+    { table: 'trip_tasks', data: [] }
   ]);
   const server = await getPlanOverview(scripted.ctx, tripId, at);
 

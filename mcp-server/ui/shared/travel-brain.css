@@ -227,6 +227,9 @@ h1, h2, h3, p { margin: 0; }
 .select-row:last-child { border-bottom: 0; }
 .select-row.is-selected { background: var(--surface-sunken); }
 .select-row input { flex: 0 0 auto; margin-top: 3px; width: 15px; height: 15px; accent-color: var(--ink); }
+.task-row { cursor: pointer; }
+.task-row.is-complete .row-body { opacity: .62; }
+.task-row.is-complete .row-title-line strong { text-decoration: line-through; text-decoration-color: var(--strike); }
 
 /* Now bar */
 .now-bar {

@@ -6,6 +6,9 @@ const expectedTools = [
   'list_trips',
   'create_trip',
   'get_trip',
+  'get_trip_tasks',
+  'add_trip_task',
+  'update_trip_task',
   'add_place',
   'update_place',
   'add_itinerary_item',
@@ -31,7 +34,7 @@ const expectedTools = [
   'commit_itinerary_change'
 ];
 
-test('the original 12, all 11 Step 4, itinerary removal, the offline snapshot, and place correction MCP tool names remain registered', () => {
+test('the full Travel Brain MCP tool surface remains registered', () => {
   const names = [];
   const server = {
     registerTool(name) {

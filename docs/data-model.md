@@ -22,6 +22,12 @@ Relationship between a trip and a place: shortlist, planned, visited, rejected. 
 ### `itinerary_items`
 Planned and actual timeline data. Has flexibility (`fixed`, `semi_flexible`, `flexible`) and status.
 
+### `trip_tasks`
+Untimed planning TODOs such as making a restaurant reservation or buying train tickets. A task may
+have no date, a true deadline (`date_kind: due`), or the date an action becomes possible
+(`date_kind: opens`), such as a booking window. Completion records both time and actor; tasks do not
+pretend to be itinerary events.
+
 ### `reservations`
 Reservation facts and confirmation metadata. Consequential external cancellation/purchase actions are intentionally out of scope for v0.1.
 

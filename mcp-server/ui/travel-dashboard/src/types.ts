@@ -71,6 +71,18 @@ export interface PlanningDay {
   issue_count?: number;
 }
 
+export interface TripTask {
+  id: string;
+  trip_id: string;
+  title: string;
+  notes?: string | null;
+  due_date?: string | null;
+  date_kind?: "due" | "opens" | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface RecommendationRecord {
   id?: string;
   place_id?: string;
@@ -109,6 +121,7 @@ export interface PlanOverview {
   days: PlanningDay[];
   issues: PlanningIssue[];
   unscheduled_places: SavedPlace[];
+  tasks: TripTask[];
   scheduled_count?: number;
   total_days?: number;
 }

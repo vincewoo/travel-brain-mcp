@@ -1,9 +1,9 @@
 import React from "react";
 import { AlertRow, IssueRow, TimelineRow } from "../components/rows";
 import { NoteEmpty } from "../components/states";
-import { dateLabel, humanize, joinMeta, plural } from "../../../shared/format";
+import { dateLabel, humanize, joinMeta, plural, zoneDate } from "../../../shared/format";
 import { relatedIssues, withAlerts } from "../../../shared/timeline";
-import type { PlanOverview, PlanningIssue, SavedPlace, TimelineItem } from "../types";
+import type { PlanOverview, PlanningIssue, SavedPlace, TimelineItem, TripTask } from "../types";
 import { useZone } from "../zone";
 
 interface Props {
@@ -14,10 +14,11 @@ interface Props {
   onFitPlaces: () => void;
   onOpenDay: (date: string) => void;
   onRemove: (item: TimelineItem) => void;
+  onTaskToggle: (task: TripTask, completed: boolean) => void;
   ask: (key: string, label: string, instruction: string) => void;
 }
 
-export function PlanView({ plan, selected, busy, onToggle, onFitPlaces, onOpenDay, onRemove, ask }: Props) {
+export function PlanView({ plan, selected, busy, onToggle, onFitPlaces, onOpenDay, onRemove, onTaskToggle, ask }: Props) {
   const zone = useZone();
   const waiting = plan.unscheduled_places.length;
   const recover = (date: string) => (alert: PlanningIssue) => ask(
@@ -39,6 +40,40 @@ export function PlanView({ plan, selected, busy, onToggle, onFitPlaces, onOpenDa
       </div>
       <button type="button" className="button" onClick={() => ask("review-plan", "Asking Claude to review the plan…", "Review the full plan for geography, pace, meal gaps, overlaps, and buffers. Prepare proposals without committing them.")}>Review full plan</button>
     </div>
+
+    <section className="container">
+      <div className="container-head sunken">
+        <div className="head-label">
+          <strong>To do</strong>
+          <span>{joinMeta(
+            plural(plan.tasks.filter((task) => !task.completed_at).length, "open task"),
+            plan.tasks.some((task) => task.completed_at) ? `${plan.tasks.filter((task) => task.completed_at).length} completed` : "",
+          )}</span>
+        </div>
+      </div>
+      {plan.tasks.length ? plan.tasks.map((task) => {
+        const completed = Boolean(task.completed_at);
+        const today = zoneDate(new Date().toISOString(), zone);
+        const dateState = task.date_kind === "opens"
+          ? (task.due_date && task.due_date > today ? "Opens" : "Opened")
+          : "Due";
+        return <label className={`select-row task-row${completed ? " is-complete" : ""}`} key={task.id}>
+          <input
+            type="checkbox"
+            checked={completed}
+            disabled={Boolean(busy)}
+            onChange={(event) => onTaskToggle(task, event.target.checked)}
+          />
+          <div className="row-body">
+            <div className="row-title-line">
+              <strong>{task.title}</strong>
+              {task.due_date ? <span className="row-aside">{dateState} {dateLabel(task.due_date, true)}</span> : null}
+            </div>
+            {task.notes ? <p className="row-meta">{task.notes}</p> : null}
+          </div>
+        </label>;
+      }) : <div className="row"><p className="row-meta">No planning tasks yet. Ask Claude to add booking or ticket reminders.</p></div>}
+    </section>
 
     {plan.issues.length ? <section className="container">
       <div className="container-head sunken">

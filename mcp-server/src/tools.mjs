@@ -2,6 +2,7 @@ import * as z from 'zod/v4';
 import {
   addItineraryItem,
   addPlace,
+  addTripTask,
   createTrip,
   commitItineraryChange,
   getCurrentContext,
@@ -14,6 +15,7 @@ import {
   getToday,
   getTrip,
   getTripLessons,
+  getTripTasks,
   listTrips,
   markPlaceVisited,
   recommendPlace,
@@ -25,6 +27,7 @@ import {
   searchTravelBrain,
   updateItineraryItem,
   updatePlace,
+  updateTripTask,
   updateCurrentTripState
 } from './db.mjs';
 
@@ -116,10 +119,61 @@ export function registerTools(server, resolveRequestContext) {
 
   server.registerTool('get_trip', {
     title: 'Get trip',
-    description: 'Read authoritative trip state, including itinerary, places, visits, journal, research, and recommendations.',
+    description: 'Read authoritative trip state, including itinerary, planning tasks, places, visits, journal, research, and recommendations.',
     inputSchema: z.object({ trip_id: z.string().uuid() }),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
   }, tool('get_trip', async ({ trip_id }, ctx) => textResult(await getTrip(ctx, trip_id), 'Trip loaded.')));
+
+  server.registerTool('get_trip_tasks', {
+    title: 'Get trip tasks',
+    description: 'List planning TODOs for a trip, with open tasks first and optional booking-window dates.',
+    inputSchema: z.object({ trip_id: z.string().uuid() }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+  }, tool('get_trip_tasks', async ({ trip_id }, ctx) => textResult(
+    await getTripTasks(ctx, trip_id),
+    'Trip tasks loaded.'
+  )));
+
+  server.registerTool('add_trip_task', {
+    title: 'Add trip task',
+    description: 'Add a planning TODO such as booking a restaurant or buying train tickets. Its optional date can be a deadline or the day an action window opens.',
+    inputSchema: z.object({
+      trip_id: z.string().uuid(),
+      title: z.string().trim().min(1),
+      notes: z.string().optional(),
+      due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe(
+        'Optional YYYY-MM-DD date associated with the task. Use date_kind to say whether it is a deadline or an opening date.'
+      ),
+      date_kind: z.enum(['due', 'opens']).default('due').describe(
+        'Whether due_date is a deadline ("due") or when the task first becomes actionable ("opens"), such as a booking window.'
+      )
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
+  }, tool('add_trip_task', async (input, ctx) => textResult(
+    { task: await addTripTask(ctx, input) },
+    'Trip task added.'
+  )));
+
+  server.registerTool('update_trip_task', {
+    title: 'Update trip task',
+    description: 'Edit or complete a planning TODO. Set completed true or false to check or uncheck it.',
+    inputSchema: z.object({
+      trip_task_id: z.string().uuid(),
+      title: z.string().trim().min(1).optional(),
+      notes: z.string().nullable().optional(),
+      due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe(
+        'YYYY-MM-DD date associated with the task, or null to remove the date.'
+      ),
+      date_kind: z.enum(['due', 'opens']).optional(),
+      completed: z.boolean().optional()
+    }).refine((input) => Object.keys(input).some((key) => key !== 'trip_task_id'), {
+      message: 'Provide at least one task field to update.'
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+  }, tool('update_trip_task', async (input, ctx) => textResult(
+    { task: await updateTripTask(ctx, input) },
+    'Trip task updated.'
+  )));
 
   server.registerTool('add_place', {
     title: 'Add place',
@@ -405,7 +459,7 @@ export function registerTools(server, resolveRequestContext) {
 
   server.registerTool('get_plan_overview', {
     title: 'Get plan overview',
-    description: 'Read day-grouped itinerary state, deterministic planning issues, and unscheduled saved places.',
+    description: 'Read planning tasks, day-grouped itinerary state, deterministic planning issues, and unscheduled saved places.',
     inputSchema: z.object({ trip_id: z.string().uuid() }),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
   }, tool('get_plan_overview', async ({ trip_id }, ctx) => textResult(
@@ -481,7 +535,7 @@ export function registerTools(server, resolveRequestContext) {
   server.registerTool('get_offline_snapshot', {
     title: 'Get offline snapshot',
     description:
-      'Read one whole trip in a single call for offline caching: itinerary, reservations, places with coordinates, visits, journal, research, recommendations, stored lessons and preferences, and live state. Returns rows rather than derived day views so a cached copy stays correct as the clock moves.',
+      'Read one whole trip in a single call for offline caching: itinerary, planning tasks, reservations, places with coordinates, visits, journal, research, recommendations, stored lessons and preferences, and live state. Returns rows rather than derived day views so a cached copy stays correct as the clock moves.',
     inputSchema: z.object({ trip_id: z.string().uuid() }),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
   }, tool('get_offline_snapshot', async ({ trip_id }, ctx) => textResult(

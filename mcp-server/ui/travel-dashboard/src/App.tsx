@@ -15,6 +15,7 @@ import { TOOL } from "./tool-contract";
 import type {
   DashboardSnapshot, JournalOverview, LauncherContext, PlacesOverview, PlanOverview,
   RecommendationsOverview, SavedPlace, TimelineItem, TripSummary, TripView,
+  TripTask,
 } from "./types";
 import "./styles.css";
 
@@ -156,6 +157,18 @@ export default function TravelDashboard() {
     },
     { detail: `${item.title} removed from the plan.` },
   );
+  const toggleTask = (task: TripTask, completed: boolean) => direct(
+    `task-${task.id}`,
+    completed ? `Completing “${task.title}”…` : `Reopening “${task.title}”…`,
+    () => callTool(TOOL.updateTripTask, { trip_task_id: task.id, completed }),
+    {
+      detail: completed ? `${task.title} completed.` : `${task.title} reopened.`,
+      undo: {
+        detail: `${task.title} restored.`,
+        run: () => callTool(TOOL.updateTripTask, { trip_task_id: task.id, completed: !completed }),
+      },
+    },
+  );
   const togglePlace = (place: SavedPlace) => setSelected((current) => current.includes(place.id) ? current.filter((id) => id !== place.id) : [...current, place.id]);
   const fitPlaces = () => {
     const chosen = plan?.unscheduled_places.filter((place) => selected.includes(place.id)) ?? [];
@@ -213,7 +226,7 @@ export default function TravelDashboard() {
         onStatus={updateStatus}
         ask={ask}
       />
-    : tab === "plan" && plan ? <PlanView plan={plan} selected={selected} busy={busy?.key ?? null} onToggle={togglePlace} onFitPlaces={fitPlaces} onOpenDay={openDay} onRemove={removeItem} ask={ask} />
+    : tab === "plan" && plan ? <PlanView plan={plan} selected={selected} busy={busy?.key ?? null} onToggle={togglePlace} onFitPlaces={fitPlaces} onOpenDay={openDay} onRemove={removeItem} onTaskToggle={toggleTask} ask={ask} />
     : tab === "places" && places ? <PlacesView
         places={places.places}
         query={query} city={city} status={placeFilter} group={group} openGroups={openGroups}

@@ -161,7 +161,8 @@ export async function getTrip(ctx, tripId) {
     supabase.from('place_visits').select('*').eq('trip_id', tripId),
     supabase.from('journal_entries').select('*').eq('trip_id', tripId).order('captured_at', { ascending: true }),
     supabase.from('research_items').select('*, research_sources(*)').eq('trip_id', tripId),
-    supabase.from('recommendations').select('*').eq('trip_id', tripId)
+    supabase.from('recommendations').select('*').eq('trip_id', tripId),
+    supabase.from('trip_tasks').select('*').eq('trip_id', tripId).order('created_at', { ascending: true })
   ]);
   for (const result of queries) fail(result.error, 'getTrip');
   return {
@@ -174,8 +175,81 @@ export async function getTrip(ctx, tripId) {
       (entry) => entry.author_id === ctx.actorId || entry.visibility !== 'private'
     ),
     research: queries[6].data ?? [],
-    recommendations: queries[7].data ?? []
+    recommendations: queries[7].data ?? [],
+    tasks: sortTripTasks(queries[8].data ?? [])
   };
+}
+
+/** Open work first, ordered by due date, followed by completed work in completion order. */
+function sortTripTasks(tasks) {
+  return [...tasks].sort((left, right) => {
+    const completion = Number(Boolean(left.completed_at)) - Number(Boolean(right.completed_at));
+    if (completion) return completion;
+    if (left.completed_at && right.completed_at) {
+      return new Date(right.completed_at) - new Date(left.completed_at);
+    }
+    const due = (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31');
+    return due || (left.created_at ?? '').localeCompare(right.created_at ?? '');
+  });
+}
+
+export async function getTripTasks(ctx, tripId) {
+  await tripAccess(ctx, tripId, false);
+  const { data, error } = await ctx.supabase
+    .from('trip_tasks')
+    .select('*')
+    .eq('trip_id', tripId)
+    .order('created_at', { ascending: true });
+  fail(error, 'getTripTasks');
+  return { tasks: sortTripTasks(data ?? []) };
+}
+
+export async function addTripTask(ctx, input) {
+  await tripAccess(ctx, input.trip_id, true);
+  const { data, error } = await ctx.supabase.from('trip_tasks').insert({
+    trip_id: input.trip_id,
+    title: input.title,
+    notes: input.notes ?? null,
+    due_date: input.due_date ?? null,
+    date_kind: input.date_kind ?? 'due',
+    created_by: ctx.actorId
+  }).select('*').single();
+  fail(error, 'addTripTask');
+  return data;
+}
+
+export async function updateTripTask(ctx, input, atTime = new Date()) {
+  const { data: task, error: taskError } = await ctx.supabase
+    .from('trip_tasks')
+    .select('*')
+    .eq('id', input.trip_task_id)
+    .maybeSingle();
+  fail(taskError, 'updateTripTask lookup');
+  if (!task) throw new Error('Trip task not found.');
+  await tripAccess(ctx, task.trip_id, true);
+
+  const patch = {};
+  for (const field of ['title', 'notes', 'due_date', 'date_kind']) {
+    if (input[field] !== undefined) patch[field] = input[field];
+  }
+  if (input.completed !== undefined) {
+    const isCompleted = task.completed_at != null;
+    if (input.completed !== isCompleted) {
+      patch.completed_at = input.completed ? validInstant(atTime, 'completed_at').toISOString() : null;
+      patch.completed_by = input.completed ? ctx.actorId : null;
+    }
+  }
+
+  if (!Object.keys(patch).length) return task;
+
+  const { data, error } = await ctx.supabase
+    .from('trip_tasks')
+    .update(patch)
+    .eq('id', input.trip_task_id)
+    .select('*')
+    .single();
+  fail(error, 'updateTripTask');
+  return data;
 }
 
 /**
@@ -843,13 +917,15 @@ export async function getPlanOverview(ctx, tripId, atTime = new Date()) {
     ctx.supabase.from('itinerary_items').select('*').eq('trip_id', tripId).order('planned_start', { ascending: true }),
     ctx.supabase.from('reservations').select('*').eq('trip_id', tripId),
     ctx.supabase.from('trip_places').select('*, places(*)').eq('trip_id', tripId),
-    ctx.supabase.from('research_items').select('*').eq('trip_id', tripId)
+    ctx.supabase.from('research_items').select('*').eq('trip_id', tripId),
+    ctx.supabase.from('trip_tasks').select('*').eq('trip_id', tripId).order('created_at', { ascending: true })
   ]);
   for (const result of results) fail(result.error, 'getPlanOverview');
   const items = results[0].data ?? [];
   const reservations = results[1].data ?? [];
   const tripPlaces = results[2].data ?? [];
   const research = results[3].data ?? [];
+  const tasks = sortTripTasks(results[4].data ?? []);
   // The same derivation the companion runs offline, so the phone and the dashboard cannot
   // disagree about how many issues a plan has.
   const issues = planIssues({
@@ -866,7 +942,8 @@ export async function getPlanOverview(ctx, tripId, atTime = new Date()) {
     scheduled_count: activeScheduledItems(items).length,
     days,
     issues,
-    unscheduled_places: unscheduledTripPlaces(items, tripPlaces)
+    unscheduled_places: unscheduledTripPlaces(items, tripPlaces),
+    tasks
   };
 }
 
@@ -1148,7 +1225,8 @@ export async function getOfflineSnapshot(ctx, tripId, atTime = new Date()) {
     ctx.supabase.from('research_items').select('*, research_sources(*)').eq('trip_id', tripId),
     ctx.supabase.from('recommendations').select('*').eq('trip_id', tripId),
     ctx.supabase.from('memories').select('*').eq('owner_id', ctx.actorId).or(`trip_id.eq.${tripId},trip_id.is.null`),
-    ctx.supabase.from('current_trip_state').select('*').eq('trip_id', tripId).maybeSingle()
+    ctx.supabase.from('current_trip_state').select('*').eq('trip_id', tripId).maybeSingle(),
+    ctx.supabase.from('trip_tasks').select('*').eq('trip_id', tripId).order('created_at', { ascending: true })
   ]);
   for (const result of queries) fail(result.error, 'getOfflineSnapshot');
 
@@ -1164,6 +1242,7 @@ export async function getOfflineSnapshot(ctx, tripId, atTime = new Date()) {
   const recommendations = queries[6].data ?? [];
   const memories = queries[7].data ?? [];
   const currentState = queries[8].data ?? null;
+  const tasks = sortTripTasks(queries[9].data ?? []);
   const instant = validInstant(atTime, 'at_time');
 
   return {
@@ -1177,13 +1256,14 @@ export async function getOfflineSnapshot(ctx, tripId, atTime = new Date()) {
     recommendations,
     lessons: memories.filter((memory) => memory.memory_type === 'trip_lesson' && memory.trip_id === tripId),
     preferences: memories.filter((memory) => memory.memory_type === 'preference'),
+    tasks,
     current_state: currentState,
     location: locationView(currentState, instant, ctx.locationFreshnessMinutes ?? 30),
     // The phone renders every time in the trip's zone, so it needs to know how far its own clock
     // has drifted before it trusts itself to say what is happening now.
     server_time: instant.toISOString(),
     snapshot_etag: snapshotEtag([
-      [trip], itinerary, reservations, places, visits, journal, research, recommendations, memories
+      [trip], itinerary, reservations, places, visits, journal, research, recommendations, memories, tasks
     ])
   };
 }

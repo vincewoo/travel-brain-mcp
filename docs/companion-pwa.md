@@ -21,8 +21,8 @@ looking at is real.
 
 1. **Travel Brain stays authoritative.** The PWA holds a cache and a queue. It never derives a new
    fact, resolves a conflict by guessing, or becomes the place a memory lives.
-2. **Offline reads are the product.** Capture is the convenience layer. Phase 1 ships read-only and
-   is already worth carrying.
+2. **Offline reads are the product.** Capture is the convenience layer. Phase 1 is offline
+   read-only apart from connected planning-task checkboxes and is already worth carrying.
 3. **No reasoning offline.** Every offline write either appends something new or records something
    that already happened. Anything needing judgement is parked for Claude, not approximated.
 4. **Staleness is always visible.** The app says "synced 3h ago" on every screen. This is the same
@@ -53,8 +53,9 @@ Three layers, each small.
 
 ### 1. Snapshot — one round trip
 
-`get_trip` already returns the entire bundle in a single call: trip, itinerary, reservations,
-trip_places with joined places, visits, journal, research with sources, recommendations. On a
+`get_trip` already returns the entire bundle in a single call: trip, itinerary, planning tasks,
+reservations, trip_places with joined places, visits, journal, research with sources,
+recommendations. On a
 two-bar connection, one request that either succeeds or does not is worth far more than seven
 chatty ones, so the sync protocol is essentially already designed.
 
@@ -199,7 +200,7 @@ Five tabs. It should feel like a boarding pass, not a workspace.
    over the rest of today's timeline with its alerts inline, then walking-distance saved places.
    The item in progress and the one after it carry their address, local-script address and
    confirmation code without a tap. The screen you open one-handed.
-2. **Plan** — the whole plan's issues in one list, then every day of the trip in order, each with
+2. **Plan** — planning TODO checkboxes, the whole plan's issues in one list, then every day of the trip in order, each with
    its timeline, the reservations belonging to no item, and the notes written on it. A day you can
    only read one at a time is a plan you cannot check, so the days stack down the page exactly as
    the dashboard renders them, and on a screen wide enough (820px and up — a tablet, a laptop) the
@@ -218,7 +219,8 @@ Five tabs. It should feel like a boarding pass, not a workspace.
 
 Capture — one large text box → journal note, optionally attached to the current item or place,
 optionally with GPS, plus rate-the-place-I-just-left — is Phase 2 and is not built. Until it is,
-every screen above is strictly read-only.
+every screen above is offline read-only. The task checklist is a deliberate connected-only write:
+it is deterministic, requires no Claude reasoning, and does not claim success until MCP accepts it.
 
 ### It has to look like the dashboard
 
@@ -258,22 +260,23 @@ seven days unless the app is installed. Onboarding has to insist on it.
   `client_op_id` on the four append tools; `trip_offline_places` and the replay indexes in
   `202608110003_offline_snapshot.sql`; static route at `/app`. Registering the OAuth client is an
   operator step, in the root `README.md`.
-- **Phase 1 (read-only PWA) — done.** `ui/travel-companion`: OAuth via the MCP client SDK,
+- **Phase 1 (offline-read PWA) — done.** `ui/travel-companion`: OAuth via the MCP client SDK,
   snapshot into IndexedDB, Now / Plan / Places / Card, local search, staleness banner, service
-  worker, install hint, erase-from-device, and maps (see below).
+  worker, install hint, erase-from-device, maps (see below), and connected planning-task checkboxes.
 - **Phase 2 (capture) — next.** Outbox, the five safe writes, needs-attention list.
 - **Phase 3.** "Ask Claude" handoff, photos into Supabase Storage, pending-proposal display.
 
 ### What Phase 1 does not do
 
-It reads. There is no capture yet, so a journal note or a Mark Done still needs Claude and a
-connection. The `client_op_id` plumbing exists ahead of that so Phase 2 is the outbox and nothing
-else.
+It reads offline. There is no journal/visit capture yet, so those writes and itinerary Mark Done
+still need Claude and a connection. Planning-task completion is the one direct connected write;
+without a connection its checkbox is disabled. The `client_op_id` plumbing exists ahead of Phase 2
+for the outbox-backed capture writes.
 
 Two things are worth knowing before the trip. The shell is ~153 KB gzipped, most of it the MCP
 client SDK, fetched once and then precached — fine on arrival wifi, slow on a bad hotel connection.
 And the app derives nearby distances from the device GPS only when the traveller taps **Locate**;
-it does not track position, and Phase 1 writes nothing back, so the server's last-known location is
+it does not track position or write location back, so the server's last-known location is
 only ever as fresh as Claude last made it.
 
 ## Maps

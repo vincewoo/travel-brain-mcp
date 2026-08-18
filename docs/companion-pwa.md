@@ -1,6 +1,6 @@
 # Companion PWA (offline trip reference)
 
-Status: Phase 0 and Phase 1 are built. Phase 2 (capture) and Phase 3 are still design.
+Status: Phase 0, Phase 1 and Phase 2 are built. Phase 3 is still design.
 
 Build and run it with the commands in the root `README.md`; the tool contract is in
 `docs/mcp-tools.md` and the device exposure is in `docs/security.md`.
@@ -21,8 +21,8 @@ looking at is real.
 
 1. **Travel Brain stays authoritative.** The PWA holds a cache and a queue. It never derives a new
    fact, resolves a conflict by guessing, or becomes the place a memory lives.
-2. **Offline reads are the product.** Capture is the convenience layer. Phase 1 is offline
-   read-only apart from connected planning-task checkboxes and is already worth carrying.
+2. **Offline reads are the product.** Capture is the convenience layer, and it is built, but a
+   phone that only read would still be worth carrying.
 3. **No reasoning offline.** Every offline write either appends something new or records something
    that already happened. Anything needing judgement is parked for Claude, not approximated.
 4. **Staleness is always visible.** The app says "synced 3h ago" on every screen. This is the same
@@ -144,7 +144,7 @@ four insert. (An earlier draft of this document called `mark_place_visited` idem
 it writes a new `place_visits` row every call, and a duplicate visit is worse than clutter, because
 a visit is the evidence a `firsthand` recommendation is checked against.)
 
-Built: those four tools accept an optional `client_op_id`, stored in the row's `metadata`, with
+Built, and now used: those four tools accept an optional `client_op_id`, stored in the row's `metadata`, with
 partial unique indexes scoped per writer. `place_visits` had no `metadata` column and gained one.
 The tool looks the operation up first and returns the original row; the index catches the race
 where two replays arrive at once. A replay is indistinguishable from the first call, including in
@@ -218,10 +218,14 @@ Five tabs. It should feel like a boarding pass, not a workspace.
    dietary constraints, and the lessons this trip has already taught. Plus the device settings:
    appearance, basemap tiles, and Forget this device.
 
-Capture — one large text box → journal note, optionally attached to the current item or place,
-optionally with GPS, plus rate-the-place-I-just-left — is Phase 2 and is not built. Until it is,
-every screen above is offline read-only. The task checklist is a deliberate connected-only write:
-it is deterministic, requires no Claude reasoning, and does not claim success until MCP accepts it.
+Capture is one sheet, reachable from the sync row, the Now bar and the Journal tab: a note
+(optionally attached to the item in progress, a saved place, and the device's position), a rating for
+a place just left, a place stumbled upon, and a preference worth remembering. Mark done and Skip sit
+on the timeline rows themselves, in Now and in Plan. The rating form refuses a place the trip has
+already recorded a visit for and offers the journal instead — a visit is the evidence a `firsthand`
+recommendation is checked against, so a second one is a false second sighting rather than clutter.
+The task checklist stays a deliberate connected-only write: it is deterministic, requires no Claude
+reasoning, and does not claim success until MCP accepts it.
 
 ### It has to look like the dashboard
 
@@ -280,17 +284,30 @@ seven days unless the app is installed. Onboarding has to insist on it.
   snapshot into IndexedDB, Now / Plan / Places / Card, local search, staleness banner, service
   worker, install hint, erase-from-device, appearance override, maps (see below), and connected
   planning-task checkboxes.
-- **Phase 2 (capture) — next.** Outbox, the five safe writes, needs-attention list.
+- **Phase 2 (capture) — done.** `outbox-queue.mjs` holds the rules (what a queued write becomes on
+  the wire, what it looks like before it lands, what happens when the trip moved underneath) and
+  `outbox.ts` gives them an IndexedDB store keyed per operation and a replay that reuses one MCP
+  connection for the whole run. The five safe writes are captured from one sheet plus Mark done and
+  Skip on the timeline; the sync sheet in the header carries last sync, what is queued, what is
+  failing, and the needs-attention list.
 - **Phase 3.** "Ask Claude" handoff, photos into Supabase Storage, pending-proposal display.
 
-### What Phase 1 does not do
+### What the capture layer does and does not do
 
-It reads offline. There is no journal/visit capture yet, so those writes and itinerary Mark Done
-still need Claude and a connection. Planning-task completion is the one direct connected write;
-without a connection its checkbox is disabled. The `client_op_id` plumbing exists ahead of Phase 2
-for the outbox-backed capture writes.
+Every queued write shows immediately, carrying a `pending:` id so a view can tell what Travel Brain
+has from what this phone is still holding — a note that vanished until the signal returned would
+read as a note that was lost. Replay runs after a sync rather than before one, because the fresh
+snapshot is what the conflict rules are checked against: an item deleted while the phone was dark is
+an item missing from that snapshot, which is how its queued status update gets parked with its words
+intact instead of being thrown five times at a server that will never accept it. Five rejections
+retire an entry to needs-attention rather than retrying it forever, and only an explicit tap ever
+discards one.
 
-Two things are worth knowing before the trip. The shell is ~153 KB gzipped, most of it the MCP
+What is still Claude's: moving an item, adding a scheduled one, finding an alternative, research,
+approving a proposal, and saying where the traveller is now. Planning-task checkboxes remain the one
+connected-only write — they are deterministic, so there is nothing to queue and nothing to reconcile.
+
+Two things are worth knowing before the trip. The shell is ~160 KB gzipped, most of it the MCP
 client SDK, fetched once and then precached — fine on arrival wifi, slow on a bad hotel connection.
 And the app derives nearby distances from the device GPS only when the traveller taps **Locate**;
 it does not track position or write location back, so the server's last-known location is

@@ -15,12 +15,14 @@ import { distanceLabel, localAddress, mapDirectionsLink, mapSearchLink } from ".
 import type { ClockIssue, ItineraryItem, Origin, Place, Reservation } from "../types";
 
 /**
- * The same rows the dashboard draws, minus the writes.
+ * The same rows the dashboard draws, with only the writes a phone may honestly make.
  *
- * Phase 1 of the companion is read-only, so nothing here offers Mark done, Skip, or Ask Claude —
- * a button that queued a judgement call for later would be the one thing this app promised not to
- * do. What it adds instead is the offline detail the dashboard has no reason to carry: the address
- * in local script, the confirmation code, the straight-line distance.
+ * Mark done and Skip are here because they record what already happened, offline or not; the queue
+ * behind them is what makes that safe. Anything asking where an item should move to, or what to do
+ * instead, still belongs to Claude — a button that queued a judgement call for later would be the
+ * one thing this app promised not to do. What the rows add beyond the dashboard is the offline
+ * detail it has no reason to carry: the address in local script, the confirmation code, the
+ * straight-line distance.
  */
 
 /**
@@ -62,7 +64,7 @@ export function PlaceDetail({ place, notes, reservations, origin, map }: {
   </div>;
 }
 
-export function TimelineRow({ item, zone, current, place, reservations, detailed, origin, map }: {
+export function TimelineRow({ item, zone, current, place, reservations, detailed, origin, map, busy, onDone, onSkip }: {
   item: ItineraryItem;
   zone: string;
   current?: boolean;
@@ -72,6 +74,9 @@ export function TimelineRow({ item, zone, current, place, reservations, detailed
   detailed?: boolean;
   origin?: Origin;
   map?: ReactNode;
+  busy?: boolean;
+  onDone?: (item: ItineraryItem) => void;
+  onSkip?: (item: ItineraryItem) => void;
 }) {
   const done = item.status === "completed";
   const skipped = ["skipped", "cancelled"].includes(item.status);
@@ -102,6 +107,11 @@ export function TimelineRow({ item, zone, current, place, reservations, detailed
         return meta ? <p className="row-meta">{meta}</p> : null;
       })()}
       {detailed ? <PlaceDetail place={place} notes={item.notes} reservations={reservations} origin={origin} map={map} /> : null}
+      {/* The row in progress carries its own buttons in the Now bar, so it does not repeat them. */}
+      {!inactive && !current && (onDone || onSkip) ? <div className="row-actions">
+        {onDone ? <button type="button" className="link-button" disabled={busy} onClick={() => onDone(item)}>Mark done</button> : null}
+        {onSkip && item.flexibility !== "fixed" ? <button type="button" className="link-button quiet" disabled={busy} onClick={() => onSkip(item)}>Skip</button> : null}
+      </div> : null}
     </div>
   </article>;
 }

@@ -217,3 +217,51 @@ main { flex: 1 1 auto; padding-bottom: calc(20px + var(--safe-bottom)); }
 }
 .maplibregl-ctrl-attrib a { color: var(--muted); }
 .maplibregl-ctrl-group { border-radius: var(--radius-control); overflow: hidden; }
+
+/* Capture and sync sheets. Companion-only: the dashboard renders inside a Claude host that has its
+   own idea of what a modal is, and neither of these writes exists there. A sheet rather than a page
+   because capture is something you do standing up, in the middle of whatever you were reading. */
+.sheet-scrim {
+  position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+.sheet {
+  display: flex; flex-direction: column; width: 100%; max-width: 640px; max-height: 92dvh;
+  border: 1px solid var(--border); border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  background: var(--surface-page);
+}
+.sheet-head, .sheet-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex: 0 0 auto; padding: 13px 16px;
+}
+.sheet-head { border-bottom: 1px solid var(--border); }
+.sheet-foot {
+  flex-wrap: wrap; border-top: 1px solid var(--border);
+  padding-bottom: calc(13px + var(--safe-bottom));
+}
+.sheet-status { color: var(--muted); font-size: var(--type-small); }
+.sheet-modes { padding: 11px 16px 0; }
+.sheet-body { flex: 1 1 auto; display: grid; gap: 13px; padding: 14px 16px; overflow-y: auto; }
+.sheet-note { color: var(--muted); font-size: var(--type-small); }
+.sheet-line {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 14px; font-size: var(--type-meta);
+}
+
+/* A labelled control. 16px on every field the traveller types into, because anything smaller makes
+   iOS zoom the page on focus and leaves them scrolled sideways in the middle of a note. */
+.field { display: grid; gap: 5px; }
+.field > span { color: var(--muted); font-size: var(--type-small); font-weight: 500; }
+.field input[type="text"], .field input:not([type]), .field textarea, .field select {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-control);
+  background: var(--surface); color: var(--text); font-size: 16px;
+}
+.field textarea { resize: vertical; line-height: 1.45; }
+.field.checkbox { grid-template-columns: auto 1fr; align-items: start; gap: 10px; }
+.field.checkbox input { width: 17px; height: 17px; margin-top: 2px; accent-color: var(--ink); }
+.field.checkbox span { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: var(--type-meta); }
+
+/* The Now bar's own writes, and the queue counters in the sync row, which are taps rather than
+   labels once there is something behind them to read. */
+.now-actions { margin-top: 10px; }
+.sync-row button.pill { cursor: pointer; }

@@ -9,6 +9,7 @@ import {
   timeLabel,
   timeRangeLabel,
 } from "../../../shared/format";
+import { isPendingId } from "../outbox-queue.mjs";
 import type { RecommendationCard } from "../derive";
 import type { ItineraryItem, JournalEntry, Place, Snapshot } from "../types";
 
@@ -16,8 +17,10 @@ import type { ItineraryItem, JournalEntry, Place, Snapshot } from "../types";
  * What the trip has already produced: the notes in the traveller's own words, and what they would
  * tell a friend.
  *
- * Read-only, like the rest of Phase 1 — the capture box belongs to Phase 2. Two things are kept
- * exactly as the dashboard keeps them because they are product invariants rather than layout:
+ * A note captured here appears the moment it is written and is marked as still on its way until
+ * Travel Brain has it, because a note that vanished for four hours until the signal returned would
+ * read as a note that was lost. Two things are kept exactly as the dashboard keeps them because
+ * they are product invariants rather than layout:
  * `raw_note` is rendered verbatim and never the generated summary, and recommendations stay split
  * by provenance so a research-only tip can never be mistaken for somewhere you have been.
  */
@@ -51,12 +54,13 @@ function RecommendationRow({ card }: { card: RecommendationCard }) {
   </article>;
 }
 
-export function JournalView({ snapshot, entries, recommendations, places, items }: {
+export function JournalView({ snapshot, entries, recommendations, places, items, onCapture }: {
   snapshot: Snapshot;
   entries: JournalEntry[];
   recommendations: RecommendationCard[];
   places: Map<string, Place>;
   items: Map<string, ItineraryItem>;
+  onCapture: () => void;
 }) {
   const zone = snapshot.trip.timezone;
   const firsthand = recommendations.filter((card) => card.recommendation.provenance === "firsthand").length;
@@ -67,6 +71,7 @@ export function JournalView({ snapshot, entries, recommendations, places, items 
         <h2>Journal</h2>
         <span className="view-count">{plural(entries.length, "note")} · raw text is never rewritten</span>
       </div>
+      <button type="button" className="button primary" onClick={onCapture}>Capture</button>
     </div>
 
     {entries.length ? entries.map((entry) => <article className="journal-card" key={entry.id}>
@@ -74,14 +79,18 @@ export function JournalView({ snapshot, entries, recommendations, places, items 
         <strong>{(entry.place_id ? places.get(entry.place_id)?.name : null)
           ?? (entry.itinerary_item_id ? items.get(entry.itinerary_item_id)?.title : null)
           ?? "Trip note"}</strong>
-        <time>{joinMeta(dateTimeLabel(entry.captured_at, zone), (entry.visibility ?? "private").replaceAll("_", " "))}</time>
+        <time>{joinMeta(
+          dateTimeLabel(entry.captured_at, zone),
+          (entry.visibility ?? "private").replaceAll("_", " "),
+          isPendingId(entry.id) ? "on this phone, not yet sent" : "",
+        )}</time>
       </header>
       <p className="raw-note">{entry.raw_note}</p>
       {entry.reaction ? <p className="reaction">Reaction · {entry.reaction}</p> : null}
       <VisitContext item={entry.itinerary_item_id ? items.get(entry.itinerary_item_id) : undefined} zone={zone} />
     </article>) : <BlankSlate
       title="No journal entries yet"
-      detail="Notes captured with Claude land here on the next sync, in your own words."
+      detail="Capture one here, with or without a signal. Notes written with Claude land here on the next sync."
     />}
 
     <div className="view-head">

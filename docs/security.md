@@ -56,7 +56,7 @@ Two exposures are inherent to an offline app and are accepted deliberately rathe
 - **A refresh token is persisted on the device**, in IndexedDB. Without it the app could not re-sync after the access token expires, which is most of the time on a trip.
 - **The whole trip, including the traveller's own private journal entries, is cached in plaintext on the phone.** Encrypting it would require a passphrase on every open, which defeats a reference you read while walking. Device lock is the control that actually applies.
 
-The compensating control is explicit and in the UI: **Sign out and erase from this device** clears IndexedDB, session storage, and every cache entry. Same-origin hosting keeps the cache and the token inside one origin's storage.
+Captured writes waiting for a signal sit in the same store, which means an unsent journal note is on the device in plaintext exactly as a synced one is. The compensating control is explicit and in the UI: **Sign out and erase from this device** clears IndexedDB — the cached trip and the outbox together, so a forgotten device does not go on speaking for the traveller later — plus session storage and every cache entry. Same-origin hosting keeps the cache and the token inside one origin's storage.
 
 The service worker caches only this app's own same-origin `GET` requests. It never caches `/mcp`: a replayed tool response would present a stale itinerary as live, which no cache header could make honest.
 

@@ -162,9 +162,13 @@ Both MCP requests must return `401`; health must remain `200`.
 ## Offline companion PWA
 
 `ui/travel-companion` is an installable offline app served at `/app` on this same origin. It caches
-one trip through `get_offline_snapshot` and renders Now, Plan, Places, and a reference Card with no
-connection at all. Design and rationale are in `docs/companion-pwa.md`; the device-side exposure is
-in `docs/security.md`.
+one trip through `get_offline_snapshot` and renders Now, Plan, Places, Journal, and a reference Card
+with no connection at all. It also captures with no connection: journal notes, a rating for a place
+just left, a place stumbled upon, a preference, and Mark done / Skip queue on the device and replay
+when there is a signal, each one either appending something new or recording something that already
+happened. The sync row shows what is waiting, and anything the trip outran is reported for the
+traveller to retry or discard rather than dropped. Design and rationale are in
+`docs/companion-pwa.md`; the device-side exposure is in `docs/security.md`.
 
 Maps are included and work offline in the only way an offline map honestly can. With a connection,
 and once the traveller has said yes to it, the basemap is OpenFreeMap — no API key or account to
@@ -221,7 +225,7 @@ npm --prefix ui/travel-dashboard run build
 npm --prefix ui/travel-companion run build
 ```
 
-This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 29 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, the single-file dashboard build, and the offline snapshot, replay idempotency, and companion shell.
+This runs syntax checks plus regression tests for configuration, token/identity mapping, application-level owner/editor/viewer authorization, request-scoped OAuth clients, the 29 data tools plus the unified dashboard launcher/resource, timezone-correct read models, location freshness/privacy, provenance, proposal non-mutation, atomic commit delegation, the single-file dashboard build, and the offline snapshot, replay idempotency, the companion's capture queue and its conflict rules, and the companion shell.
 
 The repository also contains a real PostgreSQL fixture at `mcp-server/test/sql/step4-integration.sql`. Run it after applying migrations to an isolated Supabase Postgres database; it verifies PostGIS ordering plus proposal commit, stale rejection, atomicity, idempotency, viewer denial, planned-vs-actual preservation, and itinerary removal with its history guard.
 

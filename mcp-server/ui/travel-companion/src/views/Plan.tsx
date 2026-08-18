@@ -5,7 +5,7 @@ import { dateLabel, dateTimeLabel, humanize, joinMeta, plural, shortDateLabel } 
 import { relatedIssues, withAlerts } from "../../../shared/timeline";
 import type { PlanView as Plan } from "../derive";
 import { dayView, journalForDate, reservationsForItem } from "../derive";
-import type { Place, Snapshot, TripTask } from "../types";
+import type { ItineraryItem, Place, Snapshot, TripTask } from "../types";
 
 /**
  * The whole plan, every day of it — the dashboard's Plan view on a phone, and a board on a screen.
@@ -26,7 +26,7 @@ import type { Place, Snapshot, TripTask } from "../types";
  * bottom of the plan is a list you can only look at. It lives in Places, where the rest of the
  * shortlist already is.
  */
-export function PlanView({ snapshot, plan, days, selected, today, places, online, taskBusy, onTaskToggle, onSelect }: {
+export function PlanView({ snapshot, plan, days, selected, today, places, online, taskBusy, busyItemId, onStatus, onTaskToggle, onSelect }: {
   snapshot: Snapshot;
   plan: Plan;
   days: string[];
@@ -35,6 +35,9 @@ export function PlanView({ snapshot, plan, days, selected, today, places, online
   places: Map<string, Place>;
   online: boolean;
   taskBusy: string | null;
+  busyItemId: string | null;
+  /** Mark done and Skip, queued when there is no signal — the plan itself is never re-timed here. */
+  onStatus: (item: ItineraryItem, status: "completed" | "skipped") => void;
   onTaskToggle: (task: TripTask, completed: boolean) => void;
   onSelect: (date: string) => void;
 }) {
@@ -135,19 +138,23 @@ export function PlanView({ snapshot, plan, days, selected, today, places, online
         date={date}
         today={today}
         places={places}
+        busyItemId={busyItemId}
+        onStatus={onStatus}
       />)}
     </div> : <NoteEmpty title="No trip days yet" detail="Set trip dates or add itinerary items to create day sections." />}
   </div>;
 }
 
 /** One day of the trip: its timeline, the bookings it holds, and what was written on it. */
-function PlanDay({ ref, snapshot, plan, date, today, places }: {
+function PlanDay({ ref, snapshot, plan, date, today, places, busyItemId, onStatus }: {
   ref: (node: HTMLElement | null) => void;
   snapshot: Snapshot;
   plan: Plan;
   date: string;
   today: string;
   places: Map<string, Place>;
+  busyItemId: string | null;
+  onStatus: (item: ItineraryItem, status: "completed" | "skipped") => void;
 }) {
   const zone = snapshot.trip.timezone;
   const day = dayView(snapshot, date);
@@ -180,6 +187,9 @@ function PlanDay({ ref, snapshot, plan, date, today, places }: {
           detailed
           place={row.item.place_id ? places.get(row.item.place_id) : undefined}
           reservations={reservationsForItem(snapshot, row.item.id)}
+          busy={busyItemId === row.item.id}
+          onDone={(item) => onStatus(item, "completed")}
+          onSkip={(item) => onStatus(item, "skipped")}
         />) : <div className="row"><p className="row-meta">Nothing scheduled on this date yet.</p></div>}
 
     {loose.length ? <>

@@ -138,14 +138,24 @@ through one tool, `get_offline_snapshot` (a whole trip in one round trip, rows r
 day views), stores those rows in IndexedDB, and recomputes Today/plan/nearby on the device via
 `trip-clock.mjs`. Caching a derived `get_today` instead would be wrong once local midnight passes.
 
+It captures as well as reads. `outbox-queue.mjs` holds the rules — what a queued write becomes on
+the wire, how it shows before it lands, and what happens when the trip moved underneath — as plain
+JavaScript so `node --test` can exercise them; `outbox.ts` gives them an IndexedDB store keyed per
+operation and a FIFO replay over one MCP connection. Replay runs *after* a sync, so the conflict
+rules are checked against the trip as it is now: a status update whose item is gone is parked in
+needs-attention with its words intact, a journal note whose item is gone is sent with the pointer
+stripped, and nothing is ever re-pointed at a neighbouring item by guesswork.
+
 It is the same product as the dashboard and has to look like it: both draw on
 `mcp-server/ui/shared/`, so a row, a status dot, a time label, and an empty state read the same on
 both surfaces. The companion mirrors the dashboard's views (Now/Today, Plan, Places, Journal with
 recommendations) and adds the offline reference sheet the dashboard has no reason to carry —
 local-script addresses, confirmation codes, straight-line distance. What it must never mirror is the
-dashboard's itinerary writes: every itinerary "Mark done", "Skip" and "Ask Claude" affordance
-stays out until the Phase 2 outbox exists. Planning-task checkboxes are the narrow exception: while
-connected they call the idempotent `update_trip_task` tool and only update IndexedDB after success.
+dashboard's planning writes: moving an item, adding a scheduled one, approving a proposal, or
+saying where the traveller is now all still need Claude and a connection. Mark done and Skip are
+allowed because they record what already happened, and they never touch planned timing. Planning-task
+checkboxes stay connected-only: they call the idempotent `update_trip_task` tool and only update
+IndexedDB after success, because a deterministic write with a live answer has nothing to queue.
 
 Maps are the phone's, not the dashboard's, and they degrade rather than disappear: `OfflineMap` is
 dependency-free SVG in the shell, drawing true relative positions and a haversine-measured scale bar
@@ -157,12 +167,11 @@ near the tileset's own `maxzoom: 14` so the pinch cannot promise detail that wil
 the rule deciding when a failing basemap gives way to the schematic. Classify that failure by what
 failed — style, tile, glyph — never by matching the error text.
 
-It is its own OAuth 2.1 client; the shell is public and holds no trip data. Phase 1 is offline
-read-only apart from connected planning-task checkboxes. Phase 2 adds an outbox limited to writes
-that append or record what already happened — the
-`client_op_id` idempotency on `add_place`, `record_journal_note`, `mark_place_visited`, and
-`remember_preference` exists for that replay. `update_current_trip_state` is deliberately never
-queued: a location delivered four hours late is a false statement. See `docs/companion-pwa.md`.
+It is its own OAuth 2.1 client; the shell is public and holds no trip data. The outbox is limited to
+writes that append or record what already happened, which is what the `client_op_id` idempotency on
+`add_place`, `record_journal_note`, `mark_place_visited`, and `remember_preference` is for on
+replay. `update_current_trip_state` is deliberately never queued: a location delivered four hours
+late is a false statement. See `docs/companion-pwa.md`.
 
 ### The dashboard is an MCP App, not a second service
 

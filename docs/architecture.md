@@ -25,9 +25,11 @@ Chooses tools and synthesizes answers. It should distinguish firsthand experienc
 Reasoning-heavy dashboard actions send a user message to the host model. The model may prepare an itinerary proposal, but only an explicit UI confirmation calls `commit_itinerary_change`.
 
 ### Companion PWA
-An installable offline companion served at `/app` on the same origin as `/mcp`, for the parts of a trip where there is no usable connection and therefore no Claude. It is a cache and, from Phase 2, a capture device — never a second source of truth.
+An installable offline companion served at `/app` on the same origin as `/mcp`, for the parts of a trip where there is no usable connection and therefore no Claude. It is a cache and a capture device — never a second source of truth.
 
 It reads through one tool, `get_offline_snapshot`, and stores the returned rows in IndexedDB. Day grouping, now/next/then, overlap alerts, and nearby distances are recomputed on the device from those rows, using the same `src/trip-clock.mjs` the server's read models use, so the two cannot disagree about which local day an item falls on. Caching a derived `get_today` instead would be wrong by morning. Planning tasks remain readable offline; their checkboxes make a narrow direct `update_trip_task` call when connected and update the cached row after the server accepts the write.
+
+Capture is an outbox: journal notes, ratings for a place just left, places stumbled upon, preferences, and Mark done / Skip are written to IndexedDB, shown immediately, and replayed FIFO after the next sync — every one of them either appending something new or recording something that already happened. The append tools' `client_op_id` makes that replay idempotent. A queued write whose target the trip has outrun is never dropped and never re-pointed by guesswork: it is reported, in the traveller's own words, for them to retry or discard.
 
 The shell is public and holds no trip data; the app authenticates as its own OAuth 2.1 client and every byte of travel content still arrives through an authenticated MCP call. Location and schedule drift remain ephemeral state, not permanent location history.
 

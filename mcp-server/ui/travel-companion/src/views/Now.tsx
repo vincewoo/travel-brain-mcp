@@ -51,7 +51,7 @@ function dayPoints(timeline: ItineraryItem[], places: Map<string, Place>): MapPo
   });
 }
 
-export function NowView({ snapshot, position, places, nearby, issues, clock, origin, offline, mapsEnabled, onEnableMaps }: {
+export function NowView({ snapshot, position, places, nearby, issues, clock, origin, offline, mapsEnabled, busyItemId, onStatus, onCapture, onEnableMaps }: {
   snapshot: Snapshot;
   position: PositionView;
   places: Map<string, Place>;
@@ -61,6 +61,10 @@ export function NowView({ snapshot, position, places, nearby, issues, clock, ori
   origin: Origin | null;
   offline: boolean;
   mapsEnabled: boolean;
+  busyItemId: string | null;
+  /** Records what happened, offline or not — the queue is what makes that honest. */
+  onStatus: (item: ItineraryItem, status: "completed" | "skipped") => void;
+  onCapture: () => void;
   onEnableMaps: () => void;
 }) {
   const zone = snapshot.trip.timezone;
@@ -83,6 +87,13 @@ export function NowView({ snapshot, position, places, nearby, issues, clock, ori
           {nextLine ? <p className="now-next">{nextLine}</p> : null}
         </div>
       </div>
+      <div className="button-row now-actions">
+        <button type="button" className="button" onClick={onCapture}>Capture</button>
+        {now ? <>
+          {now.flexibility !== "fixed" ? <button type="button" className="button" disabled={busyItemId === now.id} onClick={() => onStatus(now, "skipped")}>Skip</button> : null}
+          <button type="button" className="button primary" disabled={busyItemId === now.id} onClick={() => onStatus(now, "completed")}>Mark done</button>
+        </> : null}
+      </div>
       {percent === null ? null : <div className="now-progress"><i style={{ width: `${percent}%` }} /></div>}
     </div>
 
@@ -103,6 +114,9 @@ export function NowView({ snapshot, position, places, nearby, issues, clock, ori
               place={row.item.place_id ? places.get(row.item.place_id) : undefined}
               reservations={reservationsForItem(snapshot, row.item.id)}
               origin={origin ?? undefined}
+              busy={busyItemId === row.item.id}
+              onDone={(item) => onStatus(item, "completed")}
+              onSkip={(item) => onStatus(item, "skipped")}
             />)}
       </section> : <NoteEmpty
         title={`Nothing scheduled on ${dayHeadingLabel(position.localDate).split(",")[0]}`}

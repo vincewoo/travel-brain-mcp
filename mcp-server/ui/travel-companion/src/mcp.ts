@@ -117,6 +117,27 @@ export async function sync(requestedTripId?: string): Promise<SyncResult> {
   }
 }
 
+/**
+ * One connection, held open for a run of queued writes.
+ *
+ * Replay is FIFO and one at a time, and each entry is a separate tool call — but not a separate
+ * connection. The handshake is the expensive part of an MCP call on a two-bar signal, so a queue of
+ * six notes pays for it once. The caller closes it, however the run ends.
+ */
+export interface Writer {
+  call<T>(name: string, args: Record<string, unknown>): Promise<T>;
+  close(): Promise<void>;
+}
+
+export async function openWriter(): Promise<Writer> {
+  if (!(await hasStoredCredentials())) throw new SignInRequiredError();
+  const client = await connect();
+  return {
+    call: (name, args) => callTool(client, name, args),
+    close: () => client.close(),
+  };
+}
+
 /** A connected checkbox write: deterministic, idempotent, and never routed through a model. */
 export async function updateTripTask(tripTaskId: string, completed: boolean): Promise<TripTask> {
   if (!(await hasStoredCredentials())) throw new SignInRequiredError();

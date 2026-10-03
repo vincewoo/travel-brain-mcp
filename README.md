@@ -314,14 +314,18 @@ npx -y @modelcontextprotocol/inspector@2.1.0 --cli \
 
 The final result must include the newly created trip. Then run `examples/vertical-slice.md` rather than inventing a parallel scenario.
 
-Fly defaults to zero always-running Machines. For lower concierge latency, change:
+The checked-in config suspends the Machine when it is idle (`auto_stop_machines = "suspend"`,
+`min_machines_running = 0`). A suspended Machine bills only for its root filesystem and memory
+snapshot, not CPU or RAM, and resumes on the next request in a few hundred milliseconds with its
+process intact, so reconnecting clients do not pay the full Node cold start that `"stop"` would.
+If resume latency ever matters more than cost, keep one Machine always running instead:
 
 ```toml
 auto_stop_machines = "off"
 min_machines_running = 1
 ```
 
-This trades ongoing compute cost for avoiding cold starts.
+This trades ongoing compute cost for avoiding resumes entirely.
 
 The checked-in Fly health check sends `Host: travel-brain-mcp.fly.dev`. This keeps strict Host validation enabled while allowing Fly's internal probe to reach `/health`; do not replace it with a wildcard or disable Host validation.
 

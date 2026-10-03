@@ -18,9 +18,11 @@ primary_region = "sjc"
   internal_port = 8080
   force_https = true
   auto_start_machines = true
-  auto_stop_machines = "stop"
-  # Keep one MCP instance warm so clients do not hit a cold start when reconnecting.
-  min_machines_running = 1
+  # Suspend (snapshot memory) rather than stop when idle: compute billing stops, and the next
+  # request resumes the same process in a few hundred milliseconds instead of a full cold start,
+  # so in-memory MCP sessions survive the idle period. Requires <= 2 GB RAM and no swap.
+  auto_stop_machines = "suspend"
+  min_machines_running = 0
   processes = ["app"]
 
   [[http_service.checks]]
